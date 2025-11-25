@@ -1,5 +1,19 @@
 [
   {
+    "id": "proj_1764068786361_faxch",
+    "domain": "care-foil-89731667.figma.site",
+    "url": "https://care-foil-89731667.figma.site/",
+    "createdAt": "2025-11-25T11:06:26.361Z",
+    "spaMode": true,
+    "profile": "default",
+    "options": {
+      "profile": "default",
+      "contentSelector": null,
+      "excludeSelector": null,
+      "maxPages": 50
+    }
+  },
+  {
     "id": "proj_1764065349972_dq0m6",
     "domain": "care-foil-89731667.figma.site",
     "url": "https://care-foil-89731667.figma.site/",

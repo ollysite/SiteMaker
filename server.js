@@ -422,6 +422,84 @@ app.post('/api/extract-links', async (req, res) => {
     }
 });
 
+// API: 에셋 추출 (이미지, CSS, 폰트)
+app.post('/api/extract-assets', async (req, res) => {
+    let { url } = req.body;
+    if (!url) return res.status(400).json({ error: 'URL을 입력해주세요.' });
+    
+    url = url.trim();
+    if (!/^https?:\/\//i.test(url)) url = `https://${url}`;
+    
+    try {
+        console.log(`[Server] 에셋 추출: ${url}`);
+        
+        const { chromium } = await import('playwright');
+        const browser = await chromium.launch({ headless: true });
+        const page = await browser.newPage({ viewport: { width: 1920, height: 1080 } });
+        
+        await page.goto(url, { waitUntil: 'networkidle', timeout: 30000 });
+        await page.waitForTimeout(1000);
+        
+        const baseUrl = new URL(url);
+        
+        // 페이지에서 에셋 추출
+        const assets = await page.evaluate((origin) => {
+            const results = [];
+            const seen = new Set();
+            
+            // 이미지 추출
+            document.querySelectorAll('img[src]').forEach(img => {
+                let src = img.src;
+                if (!src || seen.has(src)) return;
+                if (src.startsWith('data:')) return; // data URL 제외
+                seen.add(src);
+                results.push({ type: 'image', url: src });
+            });
+            
+            // 배경 이미지 추출
+            document.querySelectorAll('*').forEach(el => {
+                const style = window.getComputedStyle(el);
+                const bg = style.backgroundImage;
+                if (bg && bg !== 'none') {
+                    const match = bg.match(/url\(["']?([^"')]+)["']?\)/);
+                    if (match && match[1] && !seen.has(match[1]) && !match[1].startsWith('data:')) {
+                        seen.add(match[1]);
+                        results.push({ type: 'image', url: match[1] });
+                    }
+                }
+            });
+            
+            // CSS 추출
+            document.querySelectorAll('link[rel="stylesheet"]').forEach(link => {
+                const href = link.href;
+                if (href && !seen.has(href)) {
+                    seen.add(href);
+                    results.push({ type: 'css', url: href });
+                }
+            });
+            
+            // 폰트 추출 (link 태그)
+            document.querySelectorAll('link[href*="font"], link[href*="woff"]').forEach(link => {
+                const href = link.href;
+                if (href && !seen.has(href)) {
+                    seen.add(href);
+                    results.push({ type: 'font', url: href });
+                }
+            });
+            
+            return results.slice(0, 100); // 최대 100개
+        }, baseUrl.origin);
+        
+        await browser.close();
+        
+        console.log(`[Server] ${assets.length}개 에셋 추출됨`);
+        res.json({ success: true, assets });
+    } catch (e) {
+        console.error('[에셋 추출 에러]', e);
+        res.status(500).json({ success: false, error: e.message });
+    }
+});
+
 // API: 스크린샷 캡처
 app.post('/api/screenshot', async (req, res) => {
     let { url } = req.body;

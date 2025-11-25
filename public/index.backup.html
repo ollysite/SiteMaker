@@ -1,0 +1,1844 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ScraperPark</title>
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+    <link href="/styles.css" rel="stylesheet">
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+        body { font-family: 'Inter', sans-serif; }
+        
+        /* Custom Scrollbar - Light */
+        .custom-scroll::-webkit-scrollbar { width: 6px; height: 6px; }
+        .custom-scroll::-webkit-scrollbar-track { background: transparent; }
+        .custom-scroll::-webkit-scrollbar-thumb { background: #d1d5db; border-radius: 3px; }
+        .custom-scroll::-webkit-scrollbar-thumb:hover { background: #9ca3af; }
+
+        /* Resize Handle */
+        .resize-handle {
+            width: 4px;
+            cursor: ew-resize;
+            background: #e5e7eb;
+            position: relative;
+            flex-shrink: 0;
+            transition: all 0.2s;
+        }
+        .resize-handle:hover, .resize-handle.active {
+            background: linear-gradient(to bottom, #8b5cf6, #3b82f6);
+        }
+        
+        /* Light Card */
+        .glass-card {
+            background: white;
+            border: 1px solid #e5e7eb;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+        }
+        
+        /* Gradient Text */
+        .gradient-text {
+            background: linear-gradient(135deg, #7c3aed, #3b82f6);
+            background-clip: text;
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+        
+        /* Menu Item Card - Light */
+        .menu-card {
+            background: white;
+            border: 1px solid #e5e7eb;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+            transition: all 0.2s ease;
+        }
+        .menu-card:hover {
+            border-color: #c4b5fd;
+            box-shadow: 0 4px 12px rgba(139, 92, 246, 0.1);
+            transform: translateY(-1px);
+        }
+        
+        /* Input Focus */
+        .input-glow:focus {
+            box-shadow: 0 0 0 3px rgba(139, 92, 246, 0.15);
+            border-color: #8b5cf6 !important;
+        }
+        
+        /* Toast Animations */
+        @keyframes slideIn {
+            from { transform: translateX(100%); opacity: 0; }
+            to { transform: translateX(0); opacity: 1; }
+        }
+        @keyframes fadeOut {
+            from { opacity: 1; }
+            to { opacity: 0; }
+        }
+        
+        /* Tab Styles */
+        .tab-btn { color: #6b7280; background: transparent; }
+        .tab-btn.active { color: #7c3aed; background: white; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+        .tab-btn:hover:not(.active) { color: #374151; }
+        
+        /* Asset Filter */
+        .asset-filter { color: #6b7280; background: white; }
+        .asset-filter.active { color: white; background: #7c3aed; border-color: #7c3aed; }
+        .asset-filter:hover:not(.active) { border-color: #7c3aed; color: #7c3aed; }
+        
+        /* Code Tab */
+        .code-tab.active { border-color: #7c3aed; color: #7c3aed; }
+        
+        /* Select Mode Active */
+        .select-mode-active { background: #7c3aed !important; color: white !important; border-color: #7c3aed !important; }
+        
+        /* Asset Card */
+        .asset-card {
+            background: white;
+            border: 1px solid #e5e7eb;
+            border-radius: 0.75rem;
+            overflow: hidden;
+            transition: all 0.2s;
+            cursor: pointer;
+        }
+        .asset-card:hover {
+            border-color: #c4b5fd;
+            box-shadow: 0 4px 12px rgba(139, 92, 246, 0.15);
+            transform: translateY(-2px);
+        }
+        .asset-card img {
+            width: 100%;
+            height: 80px;
+            object-fit: cover;
+            background: #f3f4f6;
+        }
+        
+        /* Code Syntax */
+        pre code { white-space: pre-wrap; word-break: break-all; }
+    </style>
+</head>
+<body class="bg-gray-50 text-gray-800 h-screen overflow-hidden">
+
+    <!-- 1. 시작 화면 (Input Form) -->
+    <div id="startView" class="h-full flex items-center justify-center p-4 bg-gray-50 transition-opacity duration-500">
+        <div class="max-w-md w-full bg-white rounded-2xl shadow-xl p-8 space-y-8 border border-gray-100 relative">
+            <!-- Top Right Library Button -->
+            <button onclick="showLibrary()" class="absolute top-4 right-4 p-2 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-full transition-colors" title="라이브러리">
+                <i data-lucide="library" class="w-5 h-5"></i>
+            </button>
+
+            <div class="text-center space-y-2">
+                <div class="flex justify-center mb-4">
+                    <div class="p-3 bg-blue-50 rounded-full">
+                        <i data-lucide="layers" class="w-8 h-8 text-blue-600"></i>
+                    </div>
+                </div>
+                <h1 class="text-2xl font-bold text-gray-900">ScraperPark</h1>
+                <p class="text-gray-500">도메인을 입력하여 사이트를 복제하세요.</p>
+            </div>
+
+            <form id="scrapeForm" class="space-y-6">
+                <div class="space-y-2">
+                    <label for="url" class="text-sm font-medium text-gray-700 block">Target URL</label>
+                    <div class="relative">
+                        <i data-lucide="link" class="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400"></i>
+                        <input type="text" id="url" required placeholder="example.com" 
+                            class="w-full pl-10 pr-4 py-3 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all">
+                    </div>
+                </div>
+                
+                <!-- 자동 설정 (숨김) -->
+                <input type="hidden" id="selectedProfile" value="default">
+                <input type="hidden" id="spaMode" value="true">
+                <input type="hidden" id="contentSelector" value="">
+                <input type="hidden" id="excludeSelector" value="">
+                <input type="hidden" id="maxPages" value="50">
+
+                <!-- Status (실시간 크롤링 상태) -->
+                <div id="statusArea" class="hidden rounded-xl p-4 bg-gradient-to-br from-blue-50 to-indigo-50 border border-blue-200 space-y-3">
+                    <!-- 헤더 -->
+                    <div class="flex items-center gap-3">
+                        <div id="statusIcon" class="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center">
+                            <i data-lucide="loader-2" class="w-4 h-4 text-blue-600 animate-spin"></i>
+                        </div>
+                        <div class="flex-1">
+                            <div id="statusPhase" class="text-xs font-semibold text-blue-600 uppercase tracking-wide">초기화</div>
+                            <div id="statusText" class="text-sm font-medium text-gray-700">작업 준비 중...</div>
+                        </div>
+                        <span id="statusTime" class="text-xs text-gray-400">0:00</span>
+                    </div>
+                    
+                    <!-- 진행률 바 -->
+                    <div class="space-y-1">
+                        <div class="flex justify-between text-xs text-gray-500">
+                            <span id="progressLabel">진행률</span>
+                            <span id="progressPercent">0%</span>
+                        </div>
+                        <div class="h-2 bg-blue-100 rounded-full overflow-hidden">
+                            <div id="progressBar" class="h-full bg-gradient-to-r from-blue-500 to-indigo-500 rounded-full transition-all duration-300" style="width: 0%"></div>
+                        </div>
+                    </div>
+                    
+                    <!-- 상세 정보 (토글) -->
+                    <details id="statusDetails" class="text-xs">
+                        <summary class="cursor-pointer text-gray-500 hover:text-gray-700 font-medium">상세 정보 보기</summary>
+                        <div class="mt-2 space-y-2 max-h-32 overflow-y-auto custom-scroll">
+                            <div id="pagesList" class="space-y-1">
+                                <!-- 캡처된 페이지 목록 -->
+                            </div>
+                            <div id="errorsList" class="space-y-1 text-red-600">
+                                <!-- 에러 목록 -->
+                            </div>
+                        </div>
+                    </details>
+                </div>
+
+                <button type="submit" id="submitBtn" class="w-full bg-blue-600 text-white py-3 px-4 rounded-lg hover:bg-blue-700 focus:ring-4 focus:ring-blue-200 transition-all flex items-center justify-center gap-2 font-medium shadow-lg shadow-blue-100">
+                    <i data-lucide="scan" class="w-5 h-5"></i>
+                    <span>메뉴 탐지</span>
+                </button>
+            </form>
+            
+            <div class="text-center">
+                <button onclick="showLibrary()" class="text-sm text-gray-500 hover:text-blue-600 font-medium flex items-center justify-center gap-1 mx-auto transition-colors">
+                    <i data-lucide="folder-open" class="w-4 h-4"></i> 저장된 프로젝트 열기
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 2. 메뉴 편집기 뷰 (Menu Editor) - Clean White Theme -->
+    <div id="menuEditorView" class="hidden h-full flex bg-gray-50">
+        <!-- 좌측: 설정 패널 -->
+        <aside class="w-[280px] flex flex-col flex-shrink-0 bg-white border-r border-gray-200">
+            <div class="h-14 flex items-center px-4 border-b border-gray-100 gap-3">
+                <button onclick="showStart()" class="p-1.5 text-gray-400 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-all">
+                    <i data-lucide="arrow-left" class="w-4 h-4"></i>
+                </button>
+                <div class="flex items-center gap-2">
+                    <div class="w-8 h-8 rounded-lg bg-gradient-to-br from-violet-500 to-blue-500 flex items-center justify-center shadow-lg shadow-violet-200">
+                        <i data-lucide="layers" class="w-4 h-4 text-white"></i>
+                    </div>
+                    <span class="font-semibold text-gray-800 text-sm">ScraperPark</span>
+                </div>
+            </div>
+            
+            <div class="flex-1 overflow-y-auto custom-scroll p-4 space-y-4">
+                <div class="glass-card rounded-xl p-4 space-y-2">
+                    <div class="flex items-center gap-2">
+                        <i data-lucide="globe" class="w-4 h-4 text-violet-500"></i>
+                        <label class="text-xs font-medium text-gray-400 uppercase tracking-wider">Target</label>
+                    </div>
+                    <div id="menuEditorUrl" class="text-sm font-medium text-gray-800 truncate"></div>
+                </div>
+                
+                <div class="glass-card rounded-xl p-4 space-y-2">
+                    <div class="flex items-center gap-2">
+                        <i data-lucide="scan" class="w-4 h-4 text-blue-500"></i>
+                        <label class="text-xs font-medium text-gray-400 uppercase tracking-wider">탐지 상태</label>
+                    </div>
+                    <div id="menuDetectStatus" class="text-sm">
+                        <span class="inline-flex items-center gap-2 text-violet-600">
+                            <i data-lucide="loader-2" class="w-4 h-4 animate-spin"></i> 분석 중...
+                        </span>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="p-4 border-t border-gray-100 space-y-3">
+                <button onclick="startScrapeWithMenus()" id="startScrapeBtn" disabled class="w-full flex items-center justify-center gap-2 px-4 py-3 bg-gradient-to-r from-violet-600 to-blue-600 text-white rounded-xl text-sm font-semibold hover:from-violet-500 hover:to-blue-500 transition-all shadow-lg shadow-violet-200 disabled:opacity-40 disabled:cursor-not-allowed disabled:shadow-none">
+                    <i data-lucide="rocket" class="w-4 h-4"></i> 스크래핑 시작
+                </button>
+                <button onclick="showStart()" class="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-transparent border border-gray-200 text-gray-500 rounded-xl text-xs font-medium hover:bg-gray-50 hover:text-gray-700 transition-all">
+                    <i data-lucide="x" class="w-3.5 h-3.5"></i> 취소
+                </button>
+            </div>
+        </aside>
+        
+        <!-- 가운데: 탭 패널 (메뉴/에셋/코드) -->
+        <main class="flex-1 flex flex-col min-w-0 bg-gray-50">
+            <!-- 탭 헤더 -->
+            <header class="h-14 bg-white border-b border-gray-200 flex items-center px-4 gap-1">
+                <div class="flex bg-gray-100 rounded-lg p-1">
+                    <button onclick="switchTab('menu')" id="tabMenu" class="tab-btn active px-4 py-1.5 text-xs font-semibold rounded-md transition-all flex items-center gap-1.5">
+                        <i data-lucide="menu" class="w-3.5 h-3.5"></i> 메뉴
+                        <span id="menuCountBadge" class="text-[9px] bg-violet-200 text-violet-700 px-1.5 py-0.5 rounded-full">0</span>
+                    </button>
+                    <button onclick="switchTab('assets')" id="tabAssets" class="tab-btn px-4 py-1.5 text-xs font-semibold rounded-md transition-all flex items-center gap-1.5">
+                        <i data-lucide="image" class="w-3.5 h-3.5"></i> 에셋
+                        <span id="assetsCountBadge" class="text-[9px] bg-gray-200 text-gray-600 px-1.5 py-0.5 rounded-full">0</span>
+                    </button>
+                    <button onclick="switchTab('code')" id="tabCode" class="tab-btn px-4 py-1.5 text-xs font-semibold rounded-md transition-all flex items-center gap-1.5">
+                        <i data-lucide="code" class="w-3.5 h-3.5"></i> 코드
+                    </button>
+                </div>
+                <div class="ml-auto flex items-center gap-2">
+                    <button onclick="toggleSelectMode()" id="selectModeBtn" class="px-3 py-1.5 text-xs font-medium rounded-lg transition-all flex items-center gap-1.5 border border-gray-200 text-gray-600 hover:bg-violet-50 hover:text-violet-600 hover:border-violet-200">
+                        <i data-lucide="mouse-pointer-click" class="w-3.5 h-3.5"></i> 요소 선택
+                    </button>
+                    <button onclick="addNewMenu()" id="addMenuBtn" class="px-3 py-1.5 bg-violet-600 text-white text-xs font-medium rounded-lg hover:bg-violet-500 transition-all flex items-center gap-1.5 shadow-sm">
+                        <i data-lucide="plus" class="w-3.5 h-3.5"></i> 추가
+                    </button>
+                </div>
+            </header>
+            
+            <!-- 탭 컨텐츠: 메뉴 -->
+            <div id="panelMenu" class="tab-panel flex-1 overflow-y-auto custom-scroll p-5">
+                <div id="menuList" class="space-y-3">
+                    <!-- 메뉴 아이템들 -->
+                </div>
+                
+                <!-- 빈 상태 -->
+                <div id="menuEmptyState" class="hidden text-center py-16">
+                    <div class="w-20 h-20 bg-gray-100 rounded-2xl flex items-center justify-center mx-auto mb-5 border border-gray-200">
+                        <i data-lucide="layout-grid" class="w-10 h-10 text-gray-300"></i>
+                    </div>
+                    <p class="text-gray-500 text-sm font-medium">메뉴가 없습니다</p>
+                    <p class="text-gray-400 text-xs mt-2">우측에서 사이트를 탐색하며 메뉴를 추가하세요</p>
+                </div>
+            </div>
+            
+            <!-- 탭 컨텐츠: 에셋 -->
+            <div id="panelAssets" class="tab-panel hidden flex-1 overflow-y-auto custom-scroll p-4">
+                <div class="mb-4 flex items-center justify-between">
+                    <div class="flex gap-2">
+                        <button onclick="filterAssets('all')" class="asset-filter active px-3 py-1 text-xs rounded-full border border-gray-200 font-medium">전체</button>
+                        <button onclick="filterAssets('image')" class="asset-filter px-3 py-1 text-xs rounded-full border border-gray-200 font-medium">이미지</button>
+                        <button onclick="filterAssets('css')" class="asset-filter px-3 py-1 text-xs rounded-full border border-gray-200 font-medium">CSS</button>
+                        <button onclick="filterAssets('font')" class="asset-filter px-3 py-1 text-xs rounded-full border border-gray-200 font-medium">폰트</button>
+                    </div>
+                    <button onclick="extractAllAssets()" class="px-3 py-1.5 bg-amber-500 text-white text-xs font-medium rounded-lg hover:bg-amber-400 flex items-center gap-1.5">
+                        <i data-lucide="download" class="w-3.5 h-3.5"></i> 전체 추출
+                    </button>
+                </div>
+                <div id="assetsGrid" class="grid grid-cols-3 gap-3">
+                    <!-- 에셋 썸네일들 -->
+                </div>
+                <div id="assetsEmptyState" class="text-center py-12">
+                    <div class="w-16 h-16 bg-gray-100 rounded-xl flex items-center justify-center mx-auto mb-4">
+                        <i data-lucide="image-off" class="w-8 h-8 text-gray-300"></i>
+                    </div>
+                    <p class="text-gray-500 text-sm font-medium">에셋이 없습니다</p>
+                    <p class="text-gray-400 text-xs mt-1">"에셋 추출" 버튼을 클릭하세요</p>
+                </div>
+            </div>
+            
+            <!-- 탭 컨텐츠: 코드 -->
+            <div id="panelCode" class="tab-panel hidden flex-1 flex flex-col overflow-hidden">
+                <div class="flex border-b border-gray-200 bg-gray-50">
+                    <button onclick="switchCodeTab('html')" id="codeTabHtml" class="code-tab active px-4 py-2 text-xs font-semibold border-b-2 border-violet-500 text-violet-600">HTML</button>
+                    <button onclick="switchCodeTab('css')" id="codeTabCss" class="code-tab px-4 py-2 text-xs font-semibold border-b-2 border-transparent text-gray-500 hover:text-gray-700">CSS</button>
+                </div>
+                <div class="flex-1 overflow-hidden relative">
+                    <div id="codeHtmlPanel" class="code-content absolute inset-0 overflow-auto">
+                        <pre id="htmlCodeDisplay" class="p-4 text-xs font-mono text-gray-700 bg-gray-50 min-h-full"><code><!-- 요소를 선택하면 HTML이 표시됩니다 --></code></pre>
+                    </div>
+                    <div id="codeCssPanel" class="code-content hidden absolute inset-0 overflow-auto">
+                        <pre id="cssCodeDisplay" class="p-4 text-xs font-mono text-gray-700 bg-gray-50 min-h-full"><code>/* 요소를 선택하면 CSS가 표시됩니다 */</code></pre>
+                    </div>
+                </div>
+                <div class="p-3 bg-white border-t border-gray-200 flex gap-2">
+                    <button onclick="copyCode('html')" class="flex-1 px-3 py-2 bg-gray-100 text-gray-700 text-xs font-medium rounded-lg hover:bg-gray-200 flex items-center justify-center gap-1.5">
+                        <i data-lucide="copy" class="w-3.5 h-3.5"></i> HTML 복사
+                    </button>
+                    <button onclick="copyCode('css')" class="flex-1 px-3 py-2 bg-gray-100 text-gray-700 text-xs font-medium rounded-lg hover:bg-gray-200 flex items-center justify-center gap-1.5">
+                        <i data-lucide="copy" class="w-3.5 h-3.5"></i> CSS 복사
+                    </button>
+                    <button onclick="downloadCode()" class="px-3 py-2 bg-violet-600 text-white text-xs font-medium rounded-lg hover:bg-violet-500 flex items-center justify-center gap-1.5">
+                        <i data-lucide="download" class="w-3.5 h-3.5"></i> 다운로드
+                    </button>
+                </div>
+            </div>
+        </main>
+        
+        <!-- 리사이즈 핸들 -->
+        <div id="previewResizeHandle" class="resize-handle"></div>
+        
+        <!-- 우측: 라이브 프리뷰 + 컨트롤 -->
+        <aside id="previewPanel" class="flex flex-col flex-shrink-0 bg-white border-l border-gray-200" style="width: 480px; min-width: 320px; max-width: 700px;">
+            <!-- 프리뷰 헤더 -->
+            <div class="h-14 flex items-center px-4 border-b border-gray-100 gap-3">
+                <div class="flex items-center gap-2 flex-1">
+                    <div class="flex gap-1.5">
+                        <span class="w-3 h-3 rounded-full bg-red-400"></span>
+                        <span class="w-3 h-3 rounded-full bg-yellow-400"></span>
+                        <span class="w-3 h-3 rounded-full bg-green-400"></span>
+                    </div>
+                    <span class="text-gray-400 text-xs ml-2 font-medium">Live Preview</span>
+                    <span class="w-2 h-2 rounded-full bg-green-500 animate-pulse ml-1"></span>
+                </div>
+                <div class="flex gap-1">
+                    <button onclick="refreshPreview()" class="p-2 text-gray-400 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-all" title="새로고침">
+                        <i data-lucide="refresh-cw" class="w-4 h-4"></i>
+                    </button>
+                    <button onclick="openInNewTab()" class="p-2 text-gray-400 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-all" title="새 탭에서 열기">
+                        <i data-lucide="external-link" class="w-4 h-4"></i>
+                    </button>
+                </div>
+            </div>
+            
+            <!-- 프리뷰 영역 -->
+            <div class="flex-1 overflow-hidden bg-gray-100 m-3 rounded-xl border border-gray-200">
+                <iframe id="livePreviewFrame" class="w-full h-full border-none bg-white rounded-xl" sandbox="allow-same-origin allow-scripts allow-popups allow-forms"></iframe>
+            </div>
+            
+            <!-- 메뉴 추가 컨트롤 -->
+            <div class="p-4 border-t border-gray-100 space-y-3 bg-gray-50">
+                <div class="flex gap-2">
+                    <input type="text" id="currentPageName" placeholder="메뉴 이름" 
+                        class="input-glow flex-1 px-3 py-2.5 text-sm bg-white border border-gray-200 rounded-lg text-gray-800 placeholder-gray-400 focus:outline-none">
+                    <input type="text" id="currentPageUrl" placeholder="URL" 
+                        class="input-glow w-32 px-3 py-2.5 text-sm bg-white border border-gray-200 rounded-lg text-gray-800 placeholder-gray-400 focus:outline-none">
+                </div>
+                <div class="flex gap-2">
+                    <button onclick="addAs1stMenu()" class="flex-1 flex items-center justify-center gap-1.5 px-3 py-2.5 bg-blue-600 text-white text-xs font-semibold rounded-lg hover:bg-blue-500 transition-all shadow-sm">
+                        <i data-lucide="plus" class="w-3.5 h-3.5"></i> 1차 메뉴
+                    </button>
+                    <select id="parentMenuDropdown" class="flex-1 px-3 py-2.5 text-xs bg-white border border-gray-200 rounded-lg text-gray-700 focus:outline-none focus:border-violet-400">
+                        <option value="-1">상위 메뉴 선택</option>
+                    </select>
+                    <button onclick="addAs2ndMenuDirect()" class="flex items-center justify-center gap-1.5 px-4 py-2.5 bg-violet-600 text-white text-xs font-semibold rounded-lg hover:bg-violet-500 transition-all shadow-sm">
+                        <i data-lucide="corner-down-right" class="w-3.5 h-3.5"></i> 2차
+                    </button>
+                </div>
+                
+                <!-- 자동 추출 -->
+                <div class="pt-3 border-t border-gray-200">
+                    <div class="flex gap-2">
+                        <input type="text" id="hoverTargetInput" placeholder="호버할 메뉴명 (자동 추출)" 
+                            class="input-glow flex-1 px-3 py-2 text-xs bg-white border border-gray-200 rounded-lg text-gray-700 placeholder-gray-400 focus:outline-none">
+                        <button onclick="extractPageLinks()" id="extractLinksBtn" class="flex items-center justify-center gap-1.5 px-4 py-2 bg-gradient-to-r from-amber-500 to-orange-500 text-white text-xs font-semibold rounded-lg hover:from-amber-400 hover:to-orange-400 transition-all">
+                            <i data-lucide="sparkles" class="w-3.5 h-3.5"></i> 자동 추출
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </aside>
+    </div>
+
+    <!-- 3. 라이브러리 뷰 (Projects List) -->
+    <div id="libraryView" class="hidden h-full flex flex-col items-center justify-start p-8 bg-gray-50 overflow-y-auto">
+        <div class="max-w-4xl w-full space-y-6">
+            <div class="flex items-center justify-between">
+                <h2 class="text-2xl font-bold text-gray-900 flex items-center gap-2">
+                    <i data-lucide="library" class="w-6 h-6 text-blue-600"></i> Library
+                </h2>
+                <button onclick="showStart()" class="px-4 py-2 bg-white border border-gray-200 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors flex items-center gap-2">
+                    <i data-lucide="plus" class="w-4 h-4"></i> New Project
+                </button>
+            </div>
+
+            <div id="projectGrid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                <!-- Projects injected here -->
+            </div>
+        </div>
+    </div>
+
+    <!-- 3. 에디터 뷰 (Figma Style File Explorer) -->
+    <div id="editorView" class="hidden h-full flex bg-[#e5e5e5]">
+        
+        <!-- Left Sidebar -->
+        <aside class="w-[280px] bg-white border-r border-gray-200 flex flex-col flex-shrink-0 z-20 shadow-sm">
+            <!-- Header -->
+            <div class="h-12 flex items-center px-4 border-b border-gray-200 gap-2">
+                <button onclick="showLibrary()" class="p-1 -ml-2 text-gray-400 hover:text-gray-700 rounded hover:bg-gray-100 mr-1">
+                    <i data-lucide="chevron-left" class="w-5 h-5"></i>
+                </button>
+                <i data-lucide="layers" class="w-5 h-5 text-gray-900"></i>
+                <span class="font-semibold text-gray-900 text-sm truncate">Project Files</span>
+                <span id="fileCountBadge" class="ml-auto text-[10px] bg-gray-100 px-1.5 py-0.5 rounded text-gray-500 font-mono">0</span>
+            </div>
+
+            <!-- Tree -->
+            <div id="fileTree" class="flex-1 overflow-y-auto custom-scroll p-2 space-y-0.5">
+                <!-- JS Generated -->
+            </div>
+
+            <!-- Footer Actions -->
+            <div class="p-3 border-t border-gray-200 bg-gray-50 space-y-2">
+                <button onclick="downloadSelected()" class="w-full flex items-center justify-center gap-2 px-3 py-2 bg-white border border-gray-200 rounded-lg text-xs font-medium text-gray-700 hover:bg-gray-50 hover:border-gray-300 transition-all shadow-sm">
+                    <i data-lucide="check-square" class="w-3.5 h-3.5"></i> 선택 다운로드
+                </button>
+                <button onclick="downloadAll()" class="w-full flex items-center justify-center gap-2 px-3 py-2 bg-black text-white rounded-lg text-xs font-medium hover:bg-gray-800 transition-all shadow-sm">
+                    <i data-lucide="archive" class="w-3.5 h-3.5"></i> 전체 다운로드 (ZIP)
+                </button>
+            </div>
+        </aside>
+
+        <!-- Main Canvas -->
+        <main class="flex-1 flex flex-col min-w-0 bg-[#f0f0f0]">
+            <!-- Toolbar -->
+            <header class="h-12 bg-white border-b border-gray-200 flex items-center justify-between px-4 shadow-sm z-10">
+                <div class="flex items-center gap-3 overflow-hidden">
+                    <span id="currentFileName" class="text-sm font-medium text-gray-600 truncate max-w-[300px]">No file selected</span>
+                    <span id="fileMeta" class="text-xs text-gray-400 hidden border-l border-gray-200 pl-3"></span>
+                </div>
+                <div class="flex items-center gap-2">
+                    <button onclick="openViewer()" class="px-3 py-1.5 bg-blue-600 text-white text-xs font-medium rounded-md hover:bg-blue-700 transition-colors flex items-center gap-1.5 shadow-sm">
+                        <i data-lucide="sparkles" class="w-3 h-3"></i> AI 에디터 열기
+                    </button>
+                    <a id="openNewTab" href="#" target="_blank" class="hidden p-2 text-gray-500 hover:text-gray-900 hover:bg-gray-100 rounded-md" title="Open in new tab">
+                        <i data-lucide="external-link" class="w-4 h-4"></i>
+                    </a>
+                </div>
+            </header>
+
+            <!-- Preview Area -->
+            <div id="previewWrapper" class="flex-1 relative overflow-hidden flex items-center justify-center p-8">
+                <!-- Empty State -->
+                <div id="emptyState" class="text-center">
+                    <div class="w-16 h-16 bg-gray-200 rounded-full flex items-center justify-center mx-auto mb-4">
+                        <i data-lucide="layout" class="w-8 h-8 text-gray-400"></i>
+                    </div>
+                    <p class="text-gray-500 text-sm font-medium">Select a file to preview</p>
+                </div>
+
+                <!-- Content -->
+                <div id="contentContainer" class="w-full h-full bg-white shadow-2xl rounded-lg overflow-hidden hidden relative ring-1 ring-black/5">
+                    <iframe id="previewFrame" class="w-full h-full border-none bg-white"></iframe>
+                    <img id="previewImage" class="w-full h-full object-contain hidden bg-[url('data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyMCIgaGVpZ2h0PSIyMCIgZmlsbD0iI2YwZjBmMCI+PHJlY3Qgd2lkdGg9IjEwIiBoZWlnaHQ9IjEwIiAvPjxyZWN0IHg9IjEwIiB5PSIxMCIgd2lkdGg9IjEwIiBoZWlnaHQ9IjEwIiAvPjwvc3ZnPg==')]">
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <script>
+        lucide.createIcons();
+
+        const startView = document.getElementById('startView');
+        const libraryView = document.getElementById('libraryView');
+        const editorView = document.getElementById('editorView');
+        const menuEditorView = document.getElementById('menuEditorView');
+        const projectGrid = document.getElementById('projectGrid');
+        
+        const form = document.getElementById('scrapeForm');
+        const statusArea = document.getElementById('statusArea');
+        const statusText = document.getElementById('statusText');
+        const submitBtn = document.getElementById('submitBtn');
+        
+        // 메뉴 편집기 관련 변수
+        let detectedMenus = [];
+        let currentDetectUrl = '';
+        let extractedAssets = [];
+        let selectedElementHtml = '';
+        let selectedElementCss = '';
+        let isSelectMode = false;
+        
+        // ===== 탭 전환 =====
+        function switchTab(tabName) {
+            // 탭 버튼 업데이트
+            document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
+            document.getElementById('tab' + tabName.charAt(0).toUpperCase() + tabName.slice(1)).classList.add('active');
+            
+            // 패널 표시/숨김
+            document.querySelectorAll('.tab-panel').forEach(panel => panel.classList.add('hidden'));
+            document.getElementById('panel' + tabName.charAt(0).toUpperCase() + tabName.slice(1)).classList.remove('hidden');
+            
+            // 에셋 탭 선택 시 자동 추출
+            if (tabName === 'assets' && extractedAssets.length === 0 && currentDetectUrl) {
+                extractAllAssets();
+            }
+            
+            lucide.createIcons();
+        }
+        
+        // ===== 코드 탭 전환 =====
+        function switchCodeTab(type) {
+            document.querySelectorAll('.code-tab').forEach(t => {
+                t.classList.remove('active');
+                t.classList.add('border-transparent', 'text-gray-500');
+            });
+            document.querySelectorAll('.code-content').forEach(c => c.classList.add('hidden'));
+            
+            const tab = document.getElementById('codeTab' + type.charAt(0).toUpperCase() + type.slice(1));
+            tab.classList.add('active');
+            tab.classList.remove('border-transparent', 'text-gray-500');
+            document.getElementById('code' + type.charAt(0).toUpperCase() + type.slice(1) + 'Panel').classList.remove('hidden');
+        }
+        
+        // ===== 요소 선택 모드 =====
+        function toggleSelectMode() {
+            isSelectMode = !isSelectMode;
+            const btn = document.getElementById('selectModeBtn');
+            const iframe = document.getElementById('livePreviewFrame');
+            
+            if (isSelectMode) {
+                btn.classList.add('select-mode-active');
+                btn.innerHTML = '<i data-lucide="x" class="w-3.5 h-3.5"></i> 선택 취소';
+                showToast('요소를 클릭하여 선택하세요');
+                // iframe에 선택 모드 활성화 메시지 전송
+                iframe.contentWindow?.postMessage({ type: 'enableSelectMode' }, '*');
+            } else {
+                btn.classList.remove('select-mode-active');
+                btn.innerHTML = '<i data-lucide="mouse-pointer-click" class="w-3.5 h-3.5"></i> 요소 선택';
+                iframe.contentWindow?.postMessage({ type: 'disableSelectMode' }, '*');
+            }
+            lucide.createIcons();
+        }
+        
+        // ===== 에셋 필터 =====
+        function filterAssets(type) {
+            document.querySelectorAll('.asset-filter').forEach(f => f.classList.remove('active'));
+            event.target.classList.add('active');
+            
+            const grid = document.getElementById('assetsGrid');
+            const cards = grid.querySelectorAll('.asset-card');
+            
+            cards.forEach(card => {
+                if (type === 'all' || card.dataset.type === type) {
+                    card.style.display = 'block';
+                } else {
+                    card.style.display = 'none';
+                }
+            });
+        }
+        
+        // ===== 에셋 전체 추출 =====
+        async function extractAllAssets() {
+            if (!currentDetectUrl) return;
+            
+            const btn = event?.target;
+            if (btn) {
+                btn.innerHTML = '<i data-lucide="loader-2" class="w-3.5 h-3.5 animate-spin"></i> 추출 중...';
+                btn.disabled = true;
+            }
+            
+            try {
+                const res = await fetch('/api/extract-assets', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ url: currentDetectUrl })
+                });
+                
+                const data = await res.json();
+                
+                if (data.success) {
+                    extractedAssets = data.assets || [];
+                    renderAssets();
+                    document.getElementById('assetsCountBadge').textContent = extractedAssets.length;
+                    showToast(`${extractedAssets.length}개 에셋 추출 완료`);
+                }
+            } catch (e) {
+                console.error('에셋 추출 실패:', e);
+            } finally {
+                if (btn) {
+                    btn.innerHTML = '<i data-lucide="download" class="w-3.5 h-3.5"></i> 전체 추출';
+                    btn.disabled = false;
+                    lucide.createIcons();
+                }
+            }
+        }
+        
+        // ===== 에셋 렌더링 =====
+        function renderAssets() {
+            const grid = document.getElementById('assetsGrid');
+            const emptyState = document.getElementById('assetsEmptyState');
+            
+            if (extractedAssets.length === 0) {
+                grid.innerHTML = '';
+                emptyState.classList.remove('hidden');
+                return;
+            }
+            
+            emptyState.classList.add('hidden');
+            
+            grid.innerHTML = extractedAssets.map((asset, idx) => {
+                const isImage = asset.type === 'image';
+                const fileName = asset.url.split('/').pop().split('?')[0] || 'asset';
+                const shortName = fileName.length > 15 ? fileName.slice(0, 12) + '...' : fileName;
+                
+                return `
+                    <div class="asset-card" data-type="${asset.type}" data-idx="${idx}" onclick="selectAsset(${idx})">
+                        ${isImage ? 
+                            `<img src="${asset.url}" alt="${fileName}" onerror="this.src='data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><rect fill=%22%23f3f4f6%22 width=%22100%22 height=%22100%22/><text x=%2250%22 y=%2255%22 text-anchor=%22middle%22 fill=%22%239ca3af%22 font-size=%2212%22>No Image</text></svg>'">` :
+                            `<div class="h-20 bg-gray-100 flex items-center justify-center">
+                                <i data-lucide="${asset.type === 'css' ? 'file-code' : 'file-text'}" class="w-8 h-8 text-gray-400"></i>
+                            </div>`
+                        }
+                        <div class="p-2">
+                            <p class="text-xs font-medium text-gray-700 truncate" title="${fileName}">${shortName}</p>
+                            <p class="text-[10px] text-gray-400 uppercase">${asset.type}</p>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+            
+            lucide.createIcons();
+        }
+        
+        // ===== 에셋 선택 =====
+        function selectAsset(idx) {
+            const asset = extractedAssets[idx];
+            if (!asset) return;
+            
+            if (asset.type === 'image') {
+                window.open(asset.url, '_blank');
+            } else {
+                // CSS/폰트는 코드 탭에서 보여주기
+                selectedElementCss = `/* ${asset.url} */\n\n로딩 중...`;
+                switchTab('code');
+                switchCodeTab('css');
+                
+                // CSS 내용 가져오기
+                fetch(asset.url)
+                    .then(r => r.text())
+                    .then(css => {
+                        document.getElementById('cssCodeDisplay').querySelector('code').textContent = css.slice(0, 5000);
+                    })
+                    .catch(() => {});
+            }
+        }
+        
+        // ===== 코드 복사 =====
+        function copyCode(type) {
+            const code = type === 'html' ? selectedElementHtml : selectedElementCss;
+            navigator.clipboard.writeText(code).then(() => {
+                showToast(`${type.toUpperCase()} 복사됨`);
+            });
+        }
+        
+        // ===== 코드 다운로드 =====
+        function downloadCode() {
+            const htmlBlob = new Blob([selectedElementHtml], { type: 'text/html' });
+            const cssBlob = new Blob([selectedElementCss], { type: 'text/css' });
+            
+            // HTML 다운로드
+            const htmlUrl = URL.createObjectURL(htmlBlob);
+            const htmlLink = document.createElement('a');
+            htmlLink.href = htmlUrl;
+            htmlLink.download = 'element.html';
+            htmlLink.click();
+            
+            // CSS 다운로드
+            const cssUrl = URL.createObjectURL(cssBlob);
+            const cssLink = document.createElement('a');
+            cssLink.href = cssUrl;
+            cssLink.download = 'styles.css';
+            cssLink.click();
+            
+            showToast('HTML/CSS 다운로드 완료');
+        }
+        
+        // ===== iframe 메시지 수신 (요소 선택) =====
+        window.addEventListener('message', (event) => {
+            if (event.data?.type === 'elementSelected') {
+                selectedElementHtml = event.data.html || '';
+                selectedElementCss = event.data.css || '';
+                
+                // 코드 탭으로 전환
+                switchTab('code');
+                document.getElementById('htmlCodeDisplay').querySelector('code').textContent = selectedElementHtml;
+                document.getElementById('cssCodeDisplay').querySelector('code').textContent = selectedElementCss;
+                
+                // 선택 모드 종료
+                if (isSelectMode) toggleSelectMode();
+                
+                showToast('요소 선택됨');
+            }
+        });
+
+        const fileTree = document.getElementById('fileTree');
+        const previewFrame = document.getElementById('previewFrame');
+        const previewImage = document.getElementById('previewImage');
+        const currentFileName = document.getElementById('currentFileName');
+        const fileMeta = document.getElementById('fileMeta');
+        const contentContainer = document.getElementById('contentContainer');
+        const emptyState = document.getElementById('emptyState');
+        const openNewTab = document.getElementById('openNewTab');
+
+        let selectedFiles = new Set();
+        let currentProjectId = null;
+
+        // View Management
+        function showStart() {
+            startView.classList.remove('hidden');
+            libraryView.classList.add('hidden');
+            editorView.classList.add('hidden');
+            menuEditorView.classList.add('hidden');
+            // 상태 초기화
+            submitBtn.disabled = false;
+            submitBtn.classList.remove('opacity-75');
+            statusArea.classList.add('hidden');
+            lucide.createIcons();
+        }
+
+        function showLibrary() {
+            startView.classList.add('hidden');
+            libraryView.classList.remove('hidden');
+            editorView.classList.add('hidden');
+            menuEditorView.classList.add('hidden');
+            loadProjects();
+            lucide.createIcons();
+        }
+        
+        function showMenuEditor(url) {
+            startView.classList.add('hidden');
+            libraryView.classList.add('hidden');
+            editorView.classList.add('hidden');
+            menuEditorView.classList.remove('hidden');
+            
+            currentDetectUrl = url;
+            document.getElementById('menuEditorUrl').textContent = url;
+            document.getElementById('menuDetectStatus').innerHTML = `
+                <span class="inline-flex items-center gap-1.5 text-blue-600">
+                    <i data-lucide="loader-2" class="w-4 h-4 animate-spin"></i> 메뉴 탐지 중...
+                </span>`;
+            document.getElementById('menuList').innerHTML = '';
+            document.getElementById('menuEmptyState').classList.add('hidden');
+            document.getElementById('startScrapeBtn').disabled = true;
+            document.getElementById('menuCountBadge').textContent = '0';
+            
+            // 실시간 미리보기 iframe 로드
+            const iframe = document.getElementById('livePreviewFrame');
+            iframe.src = url;
+            
+            lucide.createIcons();
+            
+            // 메뉴 탐지 API 호출
+            detectMenus(url);
+        }
+        
+        function refreshPreview() {
+            const iframe = document.getElementById('livePreviewFrame');
+            if (iframe.src) {
+                iframe.src = iframe.src;
+            }
+        }
+        
+        function openInNewTab() {
+            if (currentDetectUrl) {
+                window.open(currentDetectUrl, '_blank');
+            }
+        }
+        
+        // 1차 메뉴로 추가
+        function addAs1stMenu() {
+            const nameInput = document.getElementById('currentPageName');
+            const urlInput = document.getElementById('currentPageUrl');
+            const name = nameInput.value.trim();
+            const url = urlInput.value.trim();
+            
+            if (!name) {
+                alert('메뉴 이름을 입력해주세요.');
+                nameInput.focus();
+                return;
+            }
+            
+            // 중복 체크
+            if (detectedMenus.some(m => m.trigger === name)) {
+                alert('이미 존재하는 메뉴 이름입니다.');
+                return;
+            }
+            
+            // URL이 있으면 절대 경로로 변환
+            let fullUrl = '';
+            if (url) {
+                if (url.startsWith('http')) {
+                    fullUrl = url;
+                } else if (url.startsWith('/')) {
+                    const base = new URL(currentDetectUrl);
+                    fullUrl = base.origin + url;
+                } else {
+                    const base = new URL(currentDetectUrl);
+                    fullUrl = base.origin + '/' + url;
+                }
+            }
+            
+            detectedMenus.push({ trigger: name, items: [], url: fullUrl });
+            renderMenuList();
+            updateParentMenuDropdown();
+            
+            nameInput.value = '';
+            urlInput.value = '';
+            
+            // 성공 피드백
+            showToast(`"${name}" 1차 메뉴 추가됨`);
+        }
+        
+        // 2차 메뉴로 추가 (직접)
+        function addAs2ndMenuDirect() {
+            const nameInput = document.getElementById('currentPageName');
+            const urlInput = document.getElementById('currentPageUrl');
+            const name = nameInput.value.trim();
+            const url = urlInput.value.trim();
+            const dropdown = document.getElementById('parentMenuDropdown');
+            const parentIdx = parseInt(dropdown.value);
+            
+            if (!name) {
+                alert('메뉴 이름을 입력해주세요.');
+                nameInput.focus();
+                return;
+            }
+            
+            if (detectedMenus.length === 0) {
+                alert('먼저 1차 메뉴를 추가해주세요.');
+                return;
+            }
+            
+            if (isNaN(parentIdx) || parentIdx < 0) {
+                alert('상위 메뉴를 선택해주세요.');
+                dropdown.focus();
+                return;
+            }
+            
+            if (!detectedMenus[parentIdx].items) {
+                detectedMenus[parentIdx].items = [];
+            }
+            
+            // URL 절대 경로 변환
+            let fullUrl = '';
+            if (url) {
+                if (url.startsWith('http')) {
+                    fullUrl = url;
+                } else if (url.startsWith('/')) {
+                    const base = new URL(currentDetectUrl);
+                    fullUrl = base.origin + url;
+                } else {
+                    const base = new URL(currentDetectUrl);
+                    fullUrl = base.origin + '/' + url;
+                }
+            }
+            
+            // 2차 메뉴는 객체로 저장 { name, url }
+            const subMenuItem = { name, url: fullUrl };
+            
+            // 중복 체크
+            if (detectedMenus[parentIdx].items.some(item => 
+                (typeof item === 'string' ? item : item.name) === name)) {
+                alert('이미 존재하는 하위 메뉴입니다.');
+                return;
+            }
+            
+            detectedMenus[parentIdx].items.push(subMenuItem);
+            renderMenuList();
+            
+            nameInput.value = '';
+            urlInput.value = '';
+            
+            // 성공 피드백
+            showToast(`"${name}" → "${detectedMenus[parentIdx].trigger}" 하위 메뉴 추가됨`);
+        }
+        
+        // 상위 메뉴 드롭다운 업데이트
+        function updateParentMenuDropdown() {
+            const dropdown = document.getElementById('parentMenuDropdown');
+            dropdown.innerHTML = '<option value="-1">상위 메뉴 선택</option>' + 
+                detectedMenus.map((menu, idx) => 
+                    `<option value="${idx}">${menu.trigger}</option>`
+                ).join('');
+        }
+        
+        // 토스트 메시지
+        function showToast(message) {
+            const toast = document.createElement('div');
+            toast.className = 'fixed bottom-6 right-6 bg-white text-gray-800 px-5 py-3 rounded-xl shadow-xl border border-gray-200 text-sm z-50 font-medium';
+            toast.style.animation = 'slideIn 0.3s ease, fadeOut 0.3s ease 1.7s forwards';
+            toast.innerHTML = `<span class="flex items-center gap-2"><svg class="w-4 h-4 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>${message}</span>`;
+            document.body.appendChild(toast);
+            setTimeout(() => toast.remove(), 2000);
+        }
+        
+        // 페이지 링크 추출하여 2차 메뉴로 추가
+        async function extractPageLinks() {
+            const dropdown = document.getElementById('parentMenuDropdown');
+            const parentIdx = parseInt(dropdown.value);
+            const urlInput = document.getElementById('currentPageUrl');
+            const hoverInput = document.getElementById('hoverTargetInput');
+            const extractUrl = urlInput.value.trim() || currentDetectUrl;
+            const hoverTarget = hoverInput.value.trim();
+            
+            if (detectedMenus.length === 0) {
+                alert('먼저 1차 메뉴를 추가해주세요.');
+                return;
+            }
+            
+            if (isNaN(parentIdx) || parentIdx < 0) {
+                alert('상위 메뉴를 선택해주세요.');
+                dropdown.focus();
+                return;
+            }
+            
+            const btn = document.getElementById('extractLinksBtn');
+            const originalContent = btn.innerHTML;
+            btn.innerHTML = '<i data-lucide="loader-2" class="w-3.5 h-3.5 animate-spin"></i> 추출 중...';
+            btn.disabled = true;
+            lucide.createIcons();
+            
+            try {
+                // URL 절대 경로 변환
+                let targetUrl = extractUrl;
+                if (!targetUrl.startsWith('http')) {
+                    const base = new URL(currentDetectUrl);
+                    targetUrl = targetUrl.startsWith('/') 
+                        ? base.origin + targetUrl 
+                        : base.origin + '/' + targetUrl;
+                }
+                
+                const res = await fetch('/api/extract-links', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ url: targetUrl, hoverTarget })
+                });
+                
+                const data = await res.json();
+                
+                if (data.success && data.links.length > 0) {
+                    if (!detectedMenus[parentIdx].items) {
+                        detectedMenus[parentIdx].items = [];
+                    }
+                    
+                    // 기존 URL들 수집 (중복 방지)
+                    const existingUrls = new Set(
+                        detectedMenus[parentIdx].items
+                            .filter(item => typeof item === 'object' && item.url)
+                            .map(item => item.url)
+                    );
+                    
+                    let addedCount = 0;
+                    for (const link of data.links) {
+                        if (!existingUrls.has(link.url)) {
+                            detectedMenus[parentIdx].items.push(link);
+                            existingUrls.add(link.url);
+                            addedCount++;
+                        }
+                    }
+                    
+                    renderMenuList();
+                    urlInput.value = '';
+                    hoverInput.value = '';
+                    showToast(`${addedCount}개 링크 추출 → "${detectedMenus[parentIdx].trigger}" 하위 메뉴 추가`);
+                } else {
+                    showToast('추출된 링크가 없습니다.');
+                }
+            } catch (e) {
+                alert('링크 추출 실패: ' + e.message);
+            } finally {
+                btn.innerHTML = originalContent;
+                btn.disabled = false;
+                lucide.createIcons();
+            }
+        }
+        
+        // 리사이즈 핸들 초기화
+        function initResizeHandle() {
+            const handle = document.getElementById('previewResizeHandle');
+            const panel = document.getElementById('previewPanel');
+            const iframe = document.getElementById('livePreviewFrame');
+            
+            if (!handle || !panel) return;
+            
+            let isResizing = false;
+            let startX = 0;
+            let startWidth = 0;
+            
+            handle.addEventListener('mousedown', (e) => {
+                isResizing = true;
+                startX = e.clientX;
+                startWidth = panel.offsetWidth;
+                handle.classList.add('active');
+                iframe.style.pointerEvents = 'none'; // 드래그 중 iframe 비활성화
+                document.body.style.cursor = 'ew-resize';
+                document.body.style.userSelect = 'none';
+            });
+            
+            document.addEventListener('mousemove', (e) => {
+                if (!isResizing) return;
+                
+                const diff = startX - e.clientX; // 왼쪽으로 드래그하면 커짐
+                const newWidth = Math.max(300, Math.min(800, startWidth + diff));
+                panel.style.width = newWidth + 'px';
+            });
+            
+            document.addEventListener('mouseup', () => {
+                if (isResizing) {
+                    isResizing = false;
+                    handle.classList.remove('active');
+                    iframe.style.pointerEvents = 'auto';
+                    document.body.style.cursor = '';
+                    document.body.style.userSelect = '';
+                }
+            });
+        }
+        
+        // 페이지 로드 시 리사이즈 핸들 초기화
+        document.addEventListener('DOMContentLoaded', initResizeHandle);
+        
+        async function detectMenus(url) {
+            try {
+                const res = await fetch('/api/detect-menus', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ url })
+                });
+                
+                const data = await res.json();
+                
+                if (data.success) {
+                    detectedMenus = data.menus || [];
+                    
+                    // 상태 업데이트
+                    document.getElementById('menuDetectStatus').innerHTML = `
+                        <span class="inline-flex items-center gap-2 text-green-600">
+                            <i data-lucide="check-circle" class="w-4 h-4"></i> ${detectedMenus.length}개 메뉴 탐지
+                        </span>`;
+                    
+                    // 메뉴 목록 렌더링
+                    renderMenuList();
+                    
+                    // 스크래핑 버튼 활성화
+                    document.getElementById('startScrapeBtn').disabled = false;
+                } else {
+                    document.getElementById('menuDetectStatus').innerHTML = `
+                        <span class="inline-flex items-center gap-2 text-red-500">
+                            <i data-lucide="alert-circle" class="w-4 h-4"></i> 탐지 실패
+                        </span>`;
+                    // 탐지 실패해도 스크래핑 버튼 활성화 (수동 추가 가능)
+                    document.getElementById('startScrapeBtn').disabled = false;
+                }
+                
+                lucide.createIcons();
+            } catch (e) {
+                console.error('[Detect] 에러:', e);
+                document.getElementById('menuDetectStatus').innerHTML = `
+                    <span class="inline-flex items-center gap-1.5 text-red-600">
+                        <i data-lucide="alert-circle" class="w-4 h-4"></i> 에러: ${e.message}
+                    </span>`;
+                lucide.createIcons();
+            }
+        }
+        
+        function renderMenuList() {
+            const container = document.getElementById('menuList');
+            const emptyState = document.getElementById('menuEmptyState');
+            
+            if (detectedMenus.length === 0) {
+                container.innerHTML = '';
+                emptyState.classList.remove('hidden');
+                document.getElementById('menuCountBadge').textContent = '0';
+                return;
+            }
+            
+            emptyState.classList.add('hidden');
+            document.getElementById('menuCountBadge').textContent = detectedMenus.length;
+            
+            container.innerHTML = detectedMenus.map((menu, index) => {
+                const getItemName = (item) => typeof item === 'string' ? item : item.name;
+                const getItemUrl = (item) => typeof item === 'string' ? '' : (item.url || '');
+                
+                return `
+                <div class="menu-card rounded-xl p-4 space-y-3" data-menu-index="${index}">
+                    <div class="flex items-center gap-3">
+                        <input type="checkbox" checked class="menu-checkbox w-4 h-4 rounded border-gray-300 text-violet-600 focus:ring-violet-500" data-index="${index}">
+                        <div class="flex-1 min-w-0">
+                            <input type="text" value="${menu.trigger}" class="menu-name w-full px-2 py-1.5 text-sm font-semibold bg-transparent border border-transparent rounded-lg text-gray-800 hover:bg-gray-50 focus:bg-gray-50 focus:border-violet-300 focus:outline-none transition-all" data-index="${index}">
+                            ${menu.url ? `<div class="text-[10px] text-violet-500 truncate px-2 mt-0.5" title="${menu.url}">🔗 ${menu.url}</div>` : ''}
+                        </div>
+                        <button onclick="removeMenu(${index})" class="p-2 text-gray-300 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all">
+                            <i data-lucide="trash-2" class="w-4 h-4"></i>
+                        </button>
+                    </div>
+                    ${menu.items && menu.items.length > 0 ? `
+                        <div class="pl-8 space-y-2">
+                            <div class="text-[10px] text-gray-400 font-medium uppercase tracking-wider">하위 메뉴 · ${menu.items.length}</div>
+                            <div class="flex flex-col gap-1.5">
+                                ${menu.items.map((item, subIdx) => `
+                                    <div class="flex items-center gap-2 px-3 py-2 bg-gray-50 text-gray-700 text-xs rounded-lg group hover:bg-violet-50 transition-all border border-gray-100">
+                                        <i data-lucide="corner-down-right" class="w-3 h-3 text-violet-400"></i>
+                                        <span class="font-medium">${getItemName(item)}</span>
+                                        ${getItemUrl(item) ? `<span class="text-blue-500 truncate max-w-[120px] text-[10px]" title="${getItemUrl(item)}">${getItemUrl(item)}</span>` : ''}
+                                        <button onclick="removeSubMenu(${index}, ${subIdx})" class="ml-auto text-gray-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-all">
+                                            <i data-lucide="x" class="w-3 h-3"></i>
+                                        </button>
+                                    </div>
+                                `).join('')}
+                            </div>
+                            <button onclick="addSubMenu(${index})" class="text-[11px] text-violet-600 hover:text-violet-700 flex items-center gap-1.5 mt-2 px-1 font-medium">
+                                <i data-lucide="plus" class="w-3 h-3"></i> 하위 메뉴 추가
+                            </button>
+                        </div>
+                    ` : `
+                        <div class="pl-8">
+                            <button onclick="addSubMenu(${index})" class="text-[11px] text-violet-600 hover:text-violet-700 flex items-center gap-1.5 px-1 font-medium">
+                                <i data-lucide="plus" class="w-3 h-3"></i> 하위 메뉴 추가
+                            </button>
+                        </div>
+                    `}
+                </div>
+            `}).join('');
+            
+            lucide.createIcons();
+            
+            // 메뉴명 변경 이벤트
+            container.querySelectorAll('.menu-name').forEach(input => {
+                input.addEventListener('change', (e) => {
+                    const idx = parseInt(e.target.dataset.index);
+                    detectedMenus[idx].trigger = e.target.value;
+                    updateParentMenuDropdown(); // 드롭다운도 업데이트
+                });
+            });
+            
+            // 상위 메뉴 드롭다운 업데이트
+            updateParentMenuDropdown();
+        }
+        
+        function addNewMenu() {
+            const name = prompt('새 메뉴 이름을 입력하세요:');
+            if (name && name.trim()) {
+                detectedMenus.push({ trigger: name.trim(), items: [] });
+                renderMenuList();
+            }
+        }
+        
+        function removeMenu(index) {
+            if (confirm(`"${detectedMenus[index].trigger}" 메뉴를 삭제하시겠습니까?`)) {
+                detectedMenus.splice(index, 1);
+                renderMenuList();
+            }
+        }
+        
+        function addSubMenu(menuIndex) {
+            const name = prompt('하위 메뉴 이름을 입력하세요:');
+            if (name && name.trim()) {
+                if (!detectedMenus[menuIndex].items) {
+                    detectedMenus[menuIndex].items = [];
+                }
+                detectedMenus[menuIndex].items.push(name.trim());
+                renderMenuList();
+            }
+        }
+        
+        function removeSubMenu(menuIndex, subIndex) {
+            detectedMenus[menuIndex].items.splice(subIndex, 1);
+            renderMenuList();
+        }
+        
+        function getSelectedMenus() {
+            const selected = [];
+            document.querySelectorAll('.menu-checkbox:checked').forEach(checkbox => {
+                const idx = parseInt(checkbox.dataset.index);
+                selected.push(detectedMenus[idx]);
+            });
+            return selected;
+        }
+        
+        async function startScrapeWithMenus() {
+            const selectedMenus = getSelectedMenus();
+            
+            if (selectedMenus.length === 0) {
+                alert('최소 1개 이상의 메뉴를 선택해주세요.');
+                return;
+            }
+            
+            // 로딩 상태
+            const btn = document.getElementById('startScrapeBtn');
+            btn.disabled = true;
+            btn.innerHTML = '<i data-lucide="loader-2" class="w-4 h-4 animate-spin"></i> 스크래핑 중...';
+            lucide.createIcons();
+            
+            try {
+                const options = {
+                    url: currentDetectUrl,
+                    spaMode: true,
+                    customMenus: selectedMenus
+                };
+                
+                const res = await fetch('/api/scrape-realtime', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(options)
+                });
+                
+                const data = await res.json();
+                
+                if (data.success && data.projectId) {
+                    // 에디터 뷰로 전환하고 SSE 연결
+                    connectCrawlStatusFromEditor(data.projectId);
+                } else {
+                    alert('스크래핑 시작 실패: ' + (data.error || '알 수 없는 오류'));
+                    btn.disabled = false;
+                    btn.innerHTML = '<i data-lucide="download-cloud" class="w-4 h-4"></i> 스크래핑 시작';
+                    lucide.createIcons();
+                }
+            } catch (e) {
+                alert('에러: ' + e.message);
+                btn.disabled = false;
+                btn.innerHTML = '<i data-lucide="download-cloud" class="w-4 h-4"></i> 스크래핑 시작';
+                lucide.createIcons();
+            }
+        }
+        
+        function connectCrawlStatusFromEditor(projectId) {
+            const eventSource = new EventSource(`/api/scrape/status/${projectId}`);
+            
+            eventSource.onmessage = (event) => {
+                const status = JSON.parse(event.data);
+                
+                // 메뉴 에디터의 상태 표시 업데이트
+                const statusEl = document.getElementById('menuDetectStatus');
+                statusEl.innerHTML = `
+                    <span class="inline-flex items-center gap-1.5 text-blue-600">
+                        <i data-lucide="loader-2" class="w-4 h-4 animate-spin"></i> ${status.message}
+                    </span>`;
+                lucide.createIcons();
+                
+                if (status.phase === 'done') {
+                    eventSource.close();
+                    setTimeout(() => {
+                        window.location.href = `/view/${projectId}`;
+                    }, 500);
+                }
+                
+                if (status.phase === 'error') {
+                    eventSource.close();
+                    statusEl.innerHTML = `
+                        <span class="inline-flex items-center gap-1.5 text-red-600">
+                            <i data-lucide="alert-circle" class="w-4 h-4"></i> 오류 발생
+                        </span>`;
+                    const btn = document.getElementById('startScrapeBtn');
+                    btn.disabled = false;
+                    btn.innerHTML = '<i data-lucide="download-cloud" class="w-4 h-4"></i> 스크래핑 시작';
+                    lucide.createIcons();
+                }
+            };
+            
+            eventSource.onerror = () => {
+                eventSource.close();
+            };
+        }
+
+        async function loadProjects() {
+            try {
+                const res = await fetch(`/api/projects?t=${Date.now()}`);
+                const projects = await res.json();
+                renderProjects(projects);
+            } catch (e) {
+                console.error('Failed to load projects', e);
+            }
+        }
+
+        function renderProjects(projects) {
+            if (projects.length === 0) {
+                projectGrid.innerHTML = '<div class="col-span-full text-center py-12 text-gray-400">저장된 프로젝트가 없습니다.</div>';
+                return;
+            }
+            
+            projectGrid.innerHTML = projects.map(p => `
+                <div class="bg-white rounded-xl border border-gray-200 p-5 hover:shadow-md transition-all group relative">
+                    <div class="flex items-start justify-between mb-4">
+                        <div class="w-10 h-10 rounded-lg bg-blue-50 flex items-center justify-center text-blue-600">
+                            <i data-lucide="globe" class="w-5 h-5"></i>
+                        </div>
+                        <div class="flex gap-1">
+                            <button onclick="enableRename(event, '${p.id}')" class="p-1 text-gray-300 hover:text-blue-500 transition-colors" title="이름 변경">
+                                <i data-lucide="edit-2" class="w-4 h-4"></i>
+                            </button>
+                            <button onclick="deleteProject(event, '${p.id}')" class="p-1 text-gray-300 hover:text-red-500 transition-colors" title="삭제">
+                                <i data-lucide="trash-2" class="w-4 h-4"></i>
+                            </button>
+                        </div>
+                    </div>
+                    <h3 class="project-name font-semibold text-gray-900 mb-1 truncate cursor-pointer hover:text-blue-600" 
+                        data-project-id="${p.id}" 
+                        data-project-name="${p.domain}"
+                        onclick="openProject('${p.id}')"
+                        ondblclick="enableRename(event, '${p.id}')">${p.domain}</h3>
+                    <p class="text-xs text-blue-600 mb-1 truncate" title="${p.url || p.domain}">
+                        <i data-lucide="link" class="w-3 h-3 inline-block"></i> ${p.url || p.domain}
+                    </p>
+                    <p class="text-xs text-gray-500 mb-4">${new Date(p.createdAt).toLocaleString()}</p>
+                    <div class="flex gap-2">
+                        <button onclick="openProject('${p.id}')" class="flex-1 py-2 bg-gray-50 text-gray-600 text-sm font-medium rounded-lg hover:bg-gray-100 transition-colors flex items-center justify-center gap-2" title="파일 관리자">
+                            <i data-lucide="folder-open" class="w-3.5 h-3.5"></i> 파일
+                        </button>
+                        <a href="/view/${p.id}" class="flex-1 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-colors flex items-center justify-center gap-2 shadow-sm">
+                            <i data-lucide="sparkles" class="w-3.5 h-3.5"></i> AI 에디터
+                        </a>
+                    </div>
+                </div>
+            `).join('');
+            lucide.createIcons();
+        }
+
+        function enableRename(e, projectId) {
+            e.stopPropagation();
+            
+            // 프로젝트 이름 요소 찾기
+            const nameElement = document.querySelector(`h3[data-project-id="${projectId}"]`);
+            if (!nameElement) return;
+            
+            const currentName = nameElement.dataset.projectName;
+            const parentDiv = nameElement.parentElement;
+            
+            // Input 요소 생성
+            const input = document.createElement('input');
+            input.type = 'text';
+            input.value = currentName;
+            input.className = 'font-semibold text-gray-900 mb-1 w-full px-2 py-1 border-2 border-blue-500 rounded focus:outline-none focus:ring-2 focus:ring-blue-300';
+            
+            // 이름 요소를 input으로 교체
+            nameElement.style.display = 'none';
+            parentDiv.insertBefore(input, nameElement.nextSibling);
+            input.focus();
+            input.select();
+            
+            // 중복 실행 방지 플래그
+            let isProcessing = false;
+            
+            // 저장 함수
+            const saveRename = async () => {
+                if (isProcessing) return;
+                isProcessing = true;
+                
+                const newName = input.value.trim();
+                if (newName && newName !== currentName) {
+                    try {
+                        const res = await fetch(`/api/projects/${projectId}/rename`, {
+                            method: 'PUT',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ name: newName })
+                        });
+                        if (res.ok) {
+                            loadProjects();
+                        } else {
+                            const data = await res.json();
+                            // 실패 시 원래대로 복구
+                            input.remove();
+                            nameElement.style.display = '';
+                            alert('이름 변경 실패: ' + (data.error || 'Unknown error'));
+                        }
+                    } catch (err) {
+                        input.remove();
+                        nameElement.style.display = '';
+                        alert('시스템 오류: ' + err.message);
+                    }
+                } else {
+                    // 변경 없으면 취소
+                    input.remove();
+                    nameElement.style.display = '';
+                }
+            };
+            
+            // 취소 함수
+            const cancelRename = () => {
+                if (isProcessing) return;
+                isProcessing = true;
+                input.remove();
+                nameElement.style.display = '';
+            };
+            
+            // Enter 키로 저장
+            input.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter') {
+                    e.preventDefault();
+                    saveRename();
+                } else if (e.key === 'Escape') {
+                    e.preventDefault();
+                    cancelRename();
+                }
+            });
+            
+            // 포커스 잃으면 저장
+            input.addEventListener('blur', saveRename);
+        }
+
+        async function openProject(id) {
+            currentProjectId = id;
+            await loadFiles(id);
+            startView.classList.add('hidden');
+            libraryView.classList.add('hidden');
+            editorView.classList.remove('hidden');
+            lucide.createIcons();
+        }
+
+        async function deleteProject(e, id) {
+            e.stopPropagation();
+            if(!confirm('이 프로젝트를 영구적으로 삭제하시겠습니까?')) return;
+            
+            try {
+                await fetch(`/api/projects/${id}`, { method: 'DELETE' });
+                loadProjects();
+            } catch(err) {
+                alert('삭제 실패');
+            }
+        }
+
+
+        // 실시간 크롤링 상태 관리
+        let crawlEventSource = null;
+        let crawlStartTime = null;
+        let crawlTimer = null;
+
+        form.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            let url = document.getElementById('url').value;
+            if (!url) return;
+            
+            // URL 정규화
+            url = url.trim();
+            if (!/^https?:\/\//i.test(url)) url = `https://${url}`;
+            
+            // 로딩 상태
+            submitBtn.disabled = true;
+            submitBtn.classList.add('opacity-75');
+            submitBtn.innerHTML = '<i data-lucide="loader-2" class="w-5 h-5 animate-spin"></i><span>탐지 중...</span>';
+            lucide.createIcons();
+            
+            // 메뉴 편집기 화면으로 전환
+            showMenuEditor(url);
+            
+            // 상태 복원
+            submitBtn.disabled = false;
+            submitBtn.classList.remove('opacity-75');
+            submitBtn.innerHTML = '<i data-lucide="scan" class="w-5 h-5"></i><span>메뉴 탐지</span>';
+            lucide.createIcons();
+        });
+
+        function connectCrawlStatus(projectId) {
+            if (crawlEventSource) {
+                crawlEventSource.close();
+            }
+
+            crawlEventSource = new EventSource(`/api/scrape/status/${projectId}`);
+            
+            crawlEventSource.onmessage = (event) => {
+                const status = JSON.parse(event.data);
+                updateStatusUI(status.phase, status.current, status.total, status.message, status);
+                
+                // 완료 시 뷰어로 이동
+                if (status.phase === 'done') {
+                    crawlEventSource.close();
+                    stopCrawlTimer();
+                    
+                    setTimeout(() => {
+                        window.location.href = `/view/${projectId}`;
+                    }, 1000);
+                }
+                
+                // 에러 시 폼 리셋
+                if (status.phase === 'error') {
+                    crawlEventSource.close();
+                    stopCrawlTimer();
+                    submitBtn.disabled = false;
+                    submitBtn.classList.remove('opacity-75');
+                }
+            };
+            
+            crawlEventSource.onerror = () => {
+                crawlEventSource.close();
+                stopCrawlTimer();
+            };
+        }
+
+        function resetStatusUI() {
+            document.getElementById('statusPhase').textContent = '초기화';
+            document.getElementById('statusText').textContent = '작업 준비 중...';
+            document.getElementById('progressBar').style.width = '0%';
+            document.getElementById('progressPercent').textContent = '0%';
+            document.getElementById('statusTime').textContent = '0:00';
+            document.getElementById('pagesList').innerHTML = '';
+            document.getElementById('errorsList').innerHTML = '';
+            document.getElementById('statusIcon').innerHTML = '<i data-lucide="loader-2" class="w-4 h-4 text-blue-600 animate-spin"></i>';
+            document.getElementById('statusIcon').className = 'w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center';
+            lucide.createIcons();
+        }
+
+        function updateStatusUI(phase, current, total, message, fullStatus = {}) {
+            const phaseNames = {
+                'init': '🚀 초기화',
+                'menu': '🔍 메뉴 탐지',
+                'capture': '📸 페이지 캡처',
+                'crawl': '🕷️ 심층 크롤링',
+                'postprocess': '🔧 후처리',
+                'done': '✅ 완료',
+                'error': '❌ 오류'
+            };
+            
+            document.getElementById('statusPhase').textContent = phaseNames[phase] || phase;
+            document.getElementById('statusText').textContent = message;
+            
+            // 진행률 계산
+            const percent = total > 0 ? Math.round((current / total) * 100) : 0;
+            document.getElementById('progressBar').style.width = `${percent}%`;
+            document.getElementById('progressPercent').textContent = `${percent}%`;
+            document.getElementById('progressLabel').textContent = `${current} / ${total}`;
+            
+            // 상태 아이콘 업데이트
+            const iconEl = document.getElementById('statusIcon');
+            if (phase === 'done') {
+                iconEl.innerHTML = '<i data-lucide="check" class="w-4 h-4 text-green-600"></i>';
+                iconEl.className = 'w-8 h-8 rounded-full bg-green-100 flex items-center justify-center';
+            } else if (phase === 'error') {
+                iconEl.innerHTML = '<i data-lucide="x" class="w-4 h-4 text-red-600"></i>';
+                iconEl.className = 'w-8 h-8 rounded-full bg-red-100 flex items-center justify-center';
+            }
+            lucide.createIcons();
+            
+            // 페이지 목록 업데이트
+            if (fullStatus.pages && fullStatus.pages.length > 0) {
+                const pagesList = document.getElementById('pagesList');
+                pagesList.innerHTML = fullStatus.pages.slice(-5).map(url => {
+                    const shortUrl = url.length > 50 ? '...' + url.slice(-47) : url;
+                    return `<div class="flex items-center gap-1 text-green-600"><i data-lucide="check-circle" class="w-3 h-3"></i>${shortUrl}</div>`;
+                }).join('');
+                lucide.createIcons();
+            }
+            
+            // 에러 목록 업데이트
+            if (fullStatus.errors && fullStatus.errors.length > 0) {
+                const errorsList = document.getElementById('errorsList');
+                errorsList.innerHTML = fullStatus.errors.slice(-3).map(err => 
+                    `<div class="flex items-center gap-1"><i data-lucide="alert-circle" class="w-3 h-3"></i>${err.message}</div>`
+                ).join('');
+                lucide.createIcons();
+            }
+        }
+
+        function startCrawlTimer() {
+            crawlTimer = setInterval(() => {
+                const elapsed = Math.floor((Date.now() - crawlStartTime) / 1000);
+                const mins = Math.floor(elapsed / 60);
+                const secs = elapsed % 60;
+                document.getElementById('statusTime').textContent = `${mins}:${secs.toString().padStart(2, '0')}`;
+            }, 1000);
+        }
+
+        function stopCrawlTimer() {
+            if (crawlTimer) {
+                clearInterval(crawlTimer);
+                crawlTimer = null;
+            }
+        }
+
+        function resetForm() {
+            submitBtn.disabled = false;
+            submitBtn.classList.remove('opacity-75');
+            statusArea.classList.add('hidden');
+            stopCrawlTimer();
+        }
+
+        function openViewer() {
+            if (currentProjectId) {
+                window.open(`/view/${currentProjectId}`, '_blank');
+            }
+        }
+
+        async function loadFiles(projectId) {
+            if (!projectId) return;
+            const res = await fetch(`/api/files?projectId=${projectId}`);
+            const root = await res.json();
+            
+            fileTree.innerHTML = '';
+            document.getElementById('fileCountBadge').textContent = root.children ? countFiles(root.children) : 0;
+            
+            if(root.children) {
+                renderTree(root.children, fileTree);
+
+                // [Auto Select] index.html 자동 선택
+                setTimeout(() => {
+                    const items = Array.from(fileTree.querySelectorAll('.tree-item span'));
+                    const indexFile = items.find(span => span.textContent.trim() === 'index.html');
+                    if (indexFile) {
+                        indexFile.parentElement.click();
+                    }
+                }, 50);
+            }
+        }
+
+        function countFiles(nodes) {
+            let count = 0;
+            nodes.forEach(node => {
+                if(node.type === 'file') count++;
+                if(node.children) count += countFiles(node.children);
+            });
+            return count;
+        }
+
+        function renderTree(nodes, container, level = 0) {
+            nodes.forEach(node => {
+                // [UI 필터링] 폰트 파일 숨기기
+                if (node.type === 'file' && /\.(woff|woff2|ttf|eot|otf)$/i.test(node.name)) {
+                    return;
+                }
+
+                const item = document.createElement('div');
+                
+                // Container for the row
+                const row = document.createElement('div');
+                row.className = `tree-item flex items-center gap-2 px-3 py-1.5 cursor-pointer text-xs transition-colors rounded-md mx-1 ${level > 0 ? 'ml-'+(level*3) : ''}`;
+                
+                // Checkbox
+                const checkbox = document.createElement('div');
+                checkbox.className = `w-3 h-3 border border-gray-300 rounded flex items-center justify-center flex-shrink-0 bg-white hover:border-gray-400 transition-colors`;
+                checkbox.onclick = (e) => {
+                    e.stopPropagation();
+                    // bg-white와 bg-black을 교체
+                    const isChecked = checkbox.classList.contains('bg-white');
+                    
+                    if (isChecked) {
+                        checkbox.classList.remove('bg-white');
+                        checkbox.classList.add('bg-black', 'border-black');
+                        checkbox.innerHTML = '<i data-lucide="check" class="w-2 h-2 text-white"></i>';
+                        toggleSelection(node.path, true);
+                    } else {
+                        checkbox.classList.add('bg-white');
+                        checkbox.classList.remove('bg-black', 'border-black');
+                        checkbox.innerHTML = '';
+                        toggleSelection(node.path, false);
+                    }
+                    lucide.createIcons();
+                };
+
+                // Icon
+                const icon = document.createElement('i');
+                const iconName = node.type === 'folder' ? 'folder' : getFileIcon(node.name);
+                icon.dataset.lucide = iconName;
+                icon.className = `w-3.5 h-3.5 ${node.type === 'folder' ? 'text-yellow-500' : 'text-gray-400'}`;
+
+                // Name
+                const nameSpan = document.createElement('span');
+                nameSpan.textContent = node.name;
+                nameSpan.className = 'truncate flex-1 text-gray-700 font-medium';
+
+                // Quick Open Button (Hover only)
+                const openBtn = document.createElement('a');
+                openBtn.href = `/projects/${currentProjectId}/${node.path}`; // 프로젝트별 경로 수정
+                openBtn.target = '_blank';
+                openBtn.className = 'hidden group-hover:flex items-center justify-center w-5 h-5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded ml-1';
+                openBtn.title = '새 창에서 열기';
+                openBtn.onclick = (e) => e.stopPropagation();
+                openBtn.innerHTML = '<i data-lucide="external-link" class="w-3 h-3"></i>';
+
+                row.append(checkbox, icon, nameSpan, openBtn);
+                
+                // Add group class for hover effect
+                row.classList.add('group');
+
+                item.appendChild(row);
+
+                // Interaction
+                row.onclick = (e) => {
+                    // Deselect others visual
+                    document.querySelectorAll('.tree-item').forEach(el => el.classList.remove('selected'));
+                    row.classList.add('selected');
+
+                    if (node.type === 'file') {
+                        previewFile(node);
+                    } else {
+                        const children = item.querySelector('.children');
+                        if (children) {
+                            children.classList.toggle('hidden');
+                            // rotate arrow icon if we had one
+                        }
+                    }
+                };
+
+                container.appendChild(item);
+
+                if (node.children) {
+                    const childrenContainer = document.createElement('div');
+                    childrenContainer.className = 'children ml-3 border-l border-gray-200 pl-1';
+                    renderTree(node.children, childrenContainer, level + 1);
+                    item.appendChild(childrenContainer);
+                }
+            });
+            lucide.createIcons();
+        }
+
+        function getFileIcon(name) {
+            if (name.endsWith('html')) return 'file-code';
+            if (name.endsWith('css')) return 'palette';
+            if (name.endsWith('js')) return 'file-json';
+            if (name.match(/\.(png|jpg|svg|gif)$/)) return 'image';
+            return 'file';
+        }
+
+        function toggleSelection(path, add) {
+            if (add) selectedFiles.add(path);
+            else selectedFiles.delete(path);
+        }
+
+        function previewFile(node) {
+            // 프로젝트별 경로 반영: /projects/proj_xxx/file.html
+            const path = `/projects/${currentProjectId}/${node.path}`;
+            const ext = node.name.split('.').pop().toLowerCase();
+
+            currentFileName.textContent = node.name;
+            fileMeta.textContent = formatSize(node.size);
+            fileMeta.classList.remove('hidden');
+            
+            emptyState.classList.add('hidden');
+            contentContainer.classList.remove('hidden');
+            
+            openNewTab.href = path;
+            openNewTab.classList.remove('hidden');
+
+            if (['png', 'jpg', 'jpeg', 'gif', 'svg'].includes(ext)) {
+                previewFrame.classList.add('hidden');
+                previewImage.src = path;
+                previewImage.classList.remove('hidden');
+            } else if (['html', 'txt', 'css', 'js', 'json'].includes(ext)) {
+                previewImage.classList.add('hidden');
+                previewFrame.src = path;
+                previewFrame.classList.remove('hidden');
+            } else {
+                // Not supported
+                contentContainer.classList.add('hidden');
+                emptyState.classList.remove('hidden');
+            }
+        }
+
+        function formatSize(bytes) {
+            if (bytes === 0) return '0 B';
+            const k = 1024;
+            const sizes = ['B', 'KB', 'MB', 'GB'];
+            const i = Math.floor(Math.log(bytes) / Math.log(k));
+            return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
+        }
+
+        async function downloadAll() {
+             if (!currentProjectId) {
+                 alert('No project selected');
+                 return;
+             }
+             window.location.href = `/api/download?files=all&projectId=${currentProjectId}`;
+        }
+
+        async function downloadSelected() {
+            if (selectedFiles.size === 0) {
+                alert('Select files to download first.');
+                return;
+            }
+            if (!currentProjectId) return;
+
+            const response = await fetch('/api/download', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ 
+                    files: Array.from(selectedFiles),
+                    projectId: currentProjectId
+                })
+            });
+            if(response.ok) {
+                const blob = await response.blob();
+                
+                // Content-Disposition 헤더에서 파일명 추출
+                let filename = 'download.zip';
+                const disposition = response.headers.get('Content-Disposition');
+                if (disposition && disposition.includes('attachment')) {
+                    const filenameRegex = /filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/;
+                    const matches = filenameRegex.exec(disposition);
+                    if (matches != null && matches[1]) { 
+                        filename = matches[1].replace(/['"]/g, '');
+                    }
+                }
+
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = filename;
+                document.body.appendChild(a);
+                a.click();
+                a.remove();
+            }
+        }
+    </script>
+</body>
+</html>
