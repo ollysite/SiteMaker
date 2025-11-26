@@ -15,6 +15,15 @@ dotenv.config();
  * @typedef {import('./types/index.js').CapturedPage} CapturedPage 
  */
 
+// 커스텀 에러 클래스
+class ScrapingError extends Error {
+    constructor(message, cause) {
+        super(message);
+        this.name = 'ScrapingError';
+        this.cause = cause;
+    }
+}
+
 // 기본 메뉴 구조 (동적 탐지 실패 시 빈 배열 - 심층 크롤링만 수행)
 /** @type {MenuGroup[]} */
 const DEFAULT_MENU_STRUCTURE = [];
@@ -594,6 +603,11 @@ async function detectSpaMode(url) {
         const isSpaFramework = spaIndicators.hasReact || spaIndicators.hasVue || spaIndicators.hasAngular || spaIndicators.hasSvelte;
         const hasJsOnlyMenus = spaIndicators.jsOnlyLinks > spaIndicators.normalLinks;
         
+        // Figma Sites 감지
+        if (url.includes('figma.site')) {
+            return { isSpa: true, reason: 'Figma Sites 감지 - SPA 모드 필수' };
+        }
+        
         if (isSpaFramework) {
             return { isSpa: true, reason: 'SPA 프레임워크 감지 (React/Vue/Angular/Svelte)' };
         }
@@ -680,6 +694,12 @@ async function scrapeSite(targetDomain, spaMode = false, customMenuStructure = n
     // 출력 디렉토리 생성
     await fs.ensureDir(outputDir);
 
+    // 🆕 Figma Sites 조기 감지 (SPA 강제)
+    if (targetDomain.includes('figma.site')) {
+        console.log('[Auto-Detect] Figma Sites 감지 - SPA 모드 강제 적용');
+        spaMode = true;
+    }
+    
     // 🆕 자동 SPA 감지: spaMode가 명시적으로 false가 아니면 자동 감지
     let useSpaMode = spaMode;
     if (spaMode === undefined || spaMode === null) {
