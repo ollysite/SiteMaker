@@ -739,143 +739,154 @@ async function scrapeSite(targetDomain, spaMode = false, customMenuStructure = n
   }
 }
 
-// Playwright 기반 SPA 캡처 함수
+// ============================================================================
+// 🚀 빠른 스크래핑 함수 (간소화 버전)
+// ============================================================================
+async function quickScrape(url, outputDir) {
+    let browser;
+    
+    try {
+        console.log('[Quick] 브라우저 시작...');
+        browser = await chromium.launch({ 
+            headless: true,
+            args: ['--disable-dev-shm-usage', '--no-sandbox', '--disable-gpu']
+        });
+        
+        const context = await browser.newContext({
+            viewport: { width: 1920, height: 1080 },
+            userAgent: CRAWL_CONFIG.USER_AGENT
+        });
+        
+        const page = await context.newPage();
+        
+        // 불필요한 리소스 차단 (속도 향상)
+        await page.route('**/*', route => {
+            const type = route.request().resourceType();
+            const url = route.request().url();
+            if (/google-analytics|googletagmanager|facebook|doubleclick|hotjar|clarity/i.test(url)) {
+                return route.abort();
+            }
+            if (type === 'media' || /\.(mp4|webm|mp3|wav)$/i.test(url)) {
+                return route.abort();
+            }
+            route.continue();
+        });
+        
+        reportProgress('init', 1, 1, '브라우저 초기화 완료');
+        
+        // 페이지 접속
+        console.log('[Quick] 페이지 접속 중...');
+        await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 });
+        
+        // 렌더링 대기 (짧게)
+        await page.waitForTimeout(2000);
+        
+        // 스크롤로 lazy load 트리거
+        await page.evaluate(() => {
+            window.scrollTo(0, document.body.scrollHeight / 2);
+        });
+        await page.waitForTimeout(500);
+        await page.evaluate(() => window.scrollTo(0, 0));
+        
+        reportProgress('capture', 0, 1, '콘텐츠 추출 중...');
+        
+        // CSS 추출
+        const allCss = await page.evaluate(() => {
+            const styles = [];
+            // 인라인 스타일시트
+            for (const sheet of document.styleSheets) {
+                try {
+                    for (const rule of sheet.cssRules || []) {
+                        styles.push(rule.cssText);
+                    }
+                } catch(e) {}
+            }
+            // <style> 태그
+            document.querySelectorAll('style').forEach(s => {
+                if (s.textContent) styles.push(s.textContent);
+            });
+            return styles.join('\n');
+        });
+        
+        // HTML 추출 및 정리
+        const html = await page.evaluate(() => {
+            // 스크립트 태그 제거
+            document.querySelectorAll('script').forEach(s => s.remove());
+            // noscript 제거
+            document.querySelectorAll('noscript').forEach(s => s.remove());
+            return document.documentElement.outerHTML;
+        });
+        
+        // 이미지 URL 추출
+        const imageUrls = await page.evaluate(() => {
+            const urls = [];
+            document.querySelectorAll('img').forEach(img => {
+                if (img.src && !img.src.startsWith('data:')) urls.push(img.src);
+            });
+            return [...new Set(urls)];
+        });
+        
+        // 디렉토리 생성
+        const cssDir = path.join(outputDir, 'assets/css');
+        const imgDir = path.join(outputDir, 'assets/img');
+        await fs.ensureDir(cssDir);
+        await fs.ensureDir(imgDir);
+        
+        // CSS 저장
+        const cssPath = path.join(cssDir, 'style.css');
+        await fs.writeFile(cssPath, allCss, 'utf-8');
+        
+        // 이미지 다운로드 (병렬)
+        console.log(`[Quick] 이미지 ${imageUrls.length}개 다운로드 중...`);
+        const imageMap = {};
+        
+        await Promise.all(imageUrls.slice(0, 50).map(async (imgUrl, i) => {
+            try {
+                const response = await page.request.get(imgUrl, { timeout: 5000 });
+                if (response.ok()) {
+                    let ext = path.extname(new URL(imgUrl).pathname).toLowerCase();
+                    if (!['.jpg', '.jpeg', '.png', '.gif', '.webp', '.svg'].includes(ext)) ext = '.jpg';
+                    const filename = `img_${i}${ext}`;
+                    await fs.writeFile(path.join(imgDir, filename), await response.body());
+                    imageMap[imgUrl] = `assets/img/${filename}`;
+                }
+            } catch(e) {}
+        }));
+        
+        // HTML에서 이미지 경로 교체
+        let finalHtml = html;
+        for (const [originalUrl, localPath] of Object.entries(imageMap)) {
+            finalHtml = finalHtml.split(originalUrl).join(localPath);
+        }
+        
+        // CSS 링크 추가, 기존 link 태그 제거
+        finalHtml = finalHtml.replace(/<link[^>]*rel=["']stylesheet["'][^>]*>/gi, '');
+        finalHtml = finalHtml.replace('</head>', '<link rel="stylesheet" href="assets/css/style.css">\n</head>');
+        
+        // HTML 저장
+        await fs.writeFile(path.join(outputDir, 'index.html'), finalHtml, 'utf-8');
+        
+        console.log(`[Quick] 완료: HTML 1개, CSS 1개, 이미지 ${Object.keys(imageMap).length}개`);
+        reportProgress('done', 1, 1, '작업 완료!');
+        
+    } catch (err) {
+        console.error('[Quick Error]', err.message);
+        reportProgress('error', 0, 1, err.message);
+        throw err;
+    } finally {
+        if (browser) await browser.close();
+    }
+}
+
+// Playwright 기반 SPA 캡처 함수 (기존 복잡한 버전)
 /**
  * @param {string} url 
  * @param {string} outputDir 
  * @param {MenuGroup[]} menuStructure 
  */
 async function captureSpaPages(url, outputDir, menuStructure) {
-    let browser, page;
-    const smartQueue = new SmartCrawlQueue();
-    
-    try {
-        ({ browser, page } = await initializeBrowser());
-
-        reportProgress('init', 1, 1, '브라우저 초기화 완료');
-
-        // 재시도 로직으로 초기 페이지 로드
-        await withRetry(async () => {
-            console.log(`[Playwright] 페이지 접속 중...`);
-            await page.goto(url, { waitUntil: 'networkidle', timeout: TIMEOUTS.PAGE_LOAD });
-        }, { context: '초기 페이지 로드' });
-        
-        // SPA 콘텐츠 렌더링 대기 (JS 실행 완료까지)
-        console.log('[Playwright] JS 렌더링 대기 중...');
-        await page.waitForTimeout(3000);
-        
-        // 🆕 Figma Sites 감지 및 특수 대기
-        const isFigmaSite = await page.evaluate(() => {
-            return window.location.hostname.includes('figma.site') || 
-                   document.querySelector('script[data-template-id]') !== null ||
-                   document.querySelector('#container .tailwind') !== null;
-        });
-        
-        if (isFigmaSite) {
-            console.log('[Playwright] 🎨 Figma Sites 감지 - 추가 대기 중...');
-            // Figma Sites는 렌더링에 더 오래 걸림
-            for (let i = 0; i < 10; i++) {
-                const contentReady = await page.evaluate(() => {
-                    const container = document.querySelector('#container');
-                    if (!container) return false;
-                    // 실제 콘텐츠가 렌더링되었는지 확인
-                    const hasRealContent = container.querySelectorAll('div, img, p, h1, h2, span').length > 10;
-                    const textLength = container.innerText?.length || 0;
-                    return hasRealContent || textLength > 100;
-                });
-                if (contentReady) {
-                    console.log('[Playwright] ✅ Figma Sites 콘텐츠 로드 완료');
-                    break;
-                }
-                console.log(`[Playwright] Figma Sites 렌더링 대기... (${i + 1}/10)`);
-                await page.waitForTimeout(1500);
-            }
-            // 최종 안정화 대기
-            await page.waitForTimeout(2000);
-        }
-        
-        // 🆕 SPA 프레임워크 감지
-        const frameworkInfo = await detectSpaFramework(page);
-        if (frameworkInfo.framework !== 'unknown') {
-            console.log(`[Playwright] 🔍 SPA 프레임워크 감지: ${frameworkInfo.framework.toUpperCase()} (신뢰도: ${frameworkInfo.confidence}%)`);
-        }
-        
-        // 콘텐츠가 로드될 때까지 추가 대기
-        for (let i = 0; i < 5; i++) {
-            const hasContent = await page.evaluate(() => {
-                return document.querySelectorAll('a, button, img').length > 3 || document.body.innerText.length > 200;
-            });
-            if (hasContent) {
-                console.log('[Playwright] ✅ 콘텐츠 감지됨');
-                break;
-            }
-            console.log(`[Playwright] 콘텐츠 대기 중... (${i + 1}/5)`);
-            await page.waitForTimeout(2000);
-        }
-        
-        // 🆕 동적 콘텐츠 안정화 대기 (SPA 특성 대응)
-        await waitForContentStabilization(page);
-        await waitForDynamicContent(page);
-
-        reportProgress('menu', 0, 1, '메뉴 구조 탐지 중...');
-        const activeMenuStructure = await discoverMenuStructure(page, menuStructure);
-        
-        // 🔍 디버그: 메뉴 구조 상세 출력
-        console.log('[DEBUG] 탐지된 메뉴 구조:', JSON.stringify(activeMenuStructure, null, 2));
-        
-        reportProgress('menu', 1, 1, `메뉴 ${activeMenuStructure.length}개 발견`);
-
-        /** @type {CapturedPage[]} */
-        const capturedPages = []; 
-        
-        // 스마트 큐 초기화 - 메뉴 항목은 최우선
-        smartQueue.markVisited(url);
-
-        // 🆕 항상 홈 페이지 먼저 캡처 (SPA 사이트 필수)
-        console.log('[SPA Mode] 홈 페이지 캡처 중...');
-        reportProgress('capture', 0, 1, '홈 페이지 캡처 중...');
-        
-        // 추가 대기 (동적 콘텐츠 로딩)
-        await page.waitForTimeout(2000);
-        
-        // 홈 페이지 캡처
-        await captureCurrentPage(page, url, outputDir, 'index', capturedPages);
-        console.log(`[SPA Mode] ✅ 홈 페이지 캡처 완료`);
-
-        // 🆕 메뉴가 없을 경우 링크 수집 모드
-        if (activeMenuStructure.length === 0) {
-            console.log('[SPA Mode] 메뉴 없음 - 링크 수집 모드');
-            
-            // 메인 페이지에서 모든 내부 링크 수집
-            const mainPageLinks = await extractInternalLinks(page, url);
-            console.log(`[SPA Mode] 메인 페이지에서 ${mainPageLinks.length}개 내부 링크 발견`);
-            
-            mainPageLinks.forEach(link => smartQueue.add(link, CRAWL_PRIORITY.INTERNAL, 'mainpage'));
-            
-            reportProgress('capture', 1, 1, '홈 페이지 캡처 완료');
-        } else {
-            const totalMenuItems = activeMenuStructure.reduce((sum, g) => sum + Math.max(1, g.items.length), 0);
-            reportProgress('capture', 1, totalMenuItems + 1, '메뉴 페이지 캡처 시작...');
-            await processMenuGroupsWithQueue(page, activeMenuStructure, url, outputDir, capturedPages, smartQueue);
-        }
-        
-        reportProgress('crawl', 0, smartQueue.size(), '심층 크롤링 시작...');
-        await processDeepCrawlingWithQueue(page, smartQueue, url, outputDir, capturedPages);
-
-        // 후처리: 링크 연결 및 네비게이션 바 주입
-        if (capturedPages.length > 0) {
-            reportProgress('postprocess', 0, 1, '링크 연결 및 네비게이션 주입 중...');
-            await postProcessHtml(outputDir, capturedPages, activeMenuStructure);
-        }
-
-        console.log(`[Playwright] 완료: ${capturedPages.length}개 페이지 캡처, ${smartQueue.visitedCount()}개 URL 방문`);
-
-    } catch (err) {
-        console.error('[Playwright Error]', err);
-        reportProgress('error', 0, 1, err.message, { error: err });
-    } finally {
-        if (browser) await browser.close();
-    }
+    // 🚀 빠른 모드 사용 (간소화된 스크래핑)
+    return quickScrape(url, outputDir);
 }
 
 // 현재 페이지 캡처 헬퍼 함수
@@ -2349,10 +2360,7 @@ async function initializeBrowser() {
             '--disable-default-apps',
             '--disable-sync',
             '--disable-translate',
-            '--no-first-run',
-            '--single-process',           // 메모리 절약
-            '--disable-software-rasterizer',
-            '--js-flags=--max-old-space-size=512'  // JS 힙 메모리 제한
+            '--no-first-run'
         ]
     });
     const context = await browser.newContext({
