@@ -833,13 +833,17 @@ app.listen(PORT, () => {
 // --- Refactored Handlers ---
 
 async function handleScrapeRequest(req, res) {
-    let { url } = req.body;
+    let { url, mode } = req.body;
     if (!url) return res.status(400).json({ error: 'URL을 입력해주세요.' });
 
     url = url.trim();
     if (!/^https?:\/\//i.test(url)) url = `https://${url}`;
     
-    const { spaMode } = req.body;
+    // 모드 변환: 'auto' | 'spa' | 'normal' → spaMode
+    let spaMode;
+    if (mode === 'spa') spaMode = true;
+    else if (mode === 'normal') spaMode = false;
+    else spaMode = undefined; // auto (자동 감지)
     const id = `proj_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`;
     const domain = new URL(url).hostname;
     const projectDir = path.join(PROJECTS_DIR, id);

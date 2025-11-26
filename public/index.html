@@ -254,6 +254,33 @@
                         <input type="text" id="modalUrlInput" placeholder="example.com" autocomplete="off">
                     </div>
                 </div>
+                <div class="modal-input-group" style="margin-top:16px;">
+                    <label>스크래핑 모드</label>
+                    <div class="mode-selector">
+                        <label class="mode-option">
+                            <input type="radio" name="scrapeMode" value="auto" checked>
+                            <span class="mode-label">
+                                <i data-lucide="wand-2"></i>
+                                <span>자동 감지</span>
+                            </span>
+                        </label>
+                        <label class="mode-option">
+                            <input type="radio" name="scrapeMode" value="spa">
+                            <span class="mode-label">
+                                <i data-lucide="zap"></i>
+                                <span>SPA (동적)</span>
+                            </span>
+                        </label>
+                        <label class="mode-option">
+                            <input type="radio" name="scrapeMode" value="normal">
+                            <span class="mode-label">
+                                <i data-lucide="file-text"></i>
+                                <span>일반 (정적)</span>
+                            </span>
+                        </label>
+                    </div>
+                    <p class="mode-hint">SPA: React, Vue, Figma 등 동적 사이트 | 일반: 정적 HTML 사이트</p>
+                </div>
             </div>
             <div class="modal-footer">
                 <button class="modal-btn secondary" onclick="closeNewProjectModal()">취소</button>

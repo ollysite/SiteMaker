@@ -106,11 +106,15 @@ function startNewProject() {
         url = 'https://' + url;
     }
     
+    // 스크래핑 모드 가져오기
+    const modeInput = document.querySelector('input[name="scrapeMode"]:checked');
+    const scrapeMode = modeInput ? modeInput.value : 'auto';
+    
     // 모달 닫기
     closeNewProjectModal();
     
     // AI 로딩 시작
-    showAiLoading(url);
+    showAiLoading(url, scrapeMode);
 }
 
 // 입력 시 에러 스타일 초기화
@@ -126,7 +130,7 @@ document.addEventListener('DOMContentLoaded', () => {
 // ============================================================
 // AI 로딩 오버레이
 // ============================================================
-function showAiLoading(url) {
+function showAiLoading(url, scrapeMode = 'auto') {
     const overlay = document.getElementById('aiLoadingOverlay');
     overlay.style.display = 'flex';
     lucide.createIcons();
@@ -135,7 +139,7 @@ function showAiLoading(url) {
     updateAiProgress(0, '웹사이트 연결 중...');
     
     // 스크래핑 시작
-    startScrapingWithAiLoading(url);
+    startScrapingWithAiLoading(url, scrapeMode);
 }
 
 function hideAiLoading() {
@@ -151,7 +155,7 @@ function updateAiProgress(percent, status) {
 }
 
 // AI 로딩과 함께 스크래핑
-async function startScrapingWithAiLoading(url) {
+async function startScrapingWithAiLoading(url, scrapeMode = 'auto') {
     try {
         const hostname = new URL(url).hostname;
         document.getElementById('aiLoadingTitle').textContent = hostname;
@@ -168,11 +172,11 @@ async function startScrapingWithAiLoading(url) {
         
         eventSource.onerror = () => eventSource.close();
         
-        // 스크래핑 API 호출
+        // 스크래핑 API 호출 (모드 포함)
         const res = await fetch('/api/scrape', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ url })
+            body: JSON.stringify({ url, mode: scrapeMode })
         });
         
         eventSource.close();
