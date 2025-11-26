@@ -194,7 +194,7 @@ async function startScrapingWithAiLoading(url) {
             document.getElementById('projectTools2').style.display = 'flex';
             
             // 프리뷰 로드
-            loadProject(data.projectId);
+            loadProjectPreview(data.projectId);
             loadProjects(); // 홈 목록 갱신
             
             // 채팅 메시지

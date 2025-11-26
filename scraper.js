@@ -817,13 +817,23 @@ async function quickScrape(url, outputDir) {
             return document.documentElement.outerHTML;
         });
         
-        // 이미지 URL 추출
-        const imageUrls = await page.evaluate(() => {
-            const urls = [];
+        // 이미지 URL 추출 (절대 URL + 원본 속성 값)
+        const imageData = await page.evaluate(() => {
+            const data = [];
             document.querySelectorAll('img').forEach(img => {
-                if (img.src && !img.src.startsWith('data:')) urls.push(img.src);
+                const src = img.getAttribute('src'); // 원본 HTML 속성값
+                const fullSrc = img.src; // 전체 URL (브라우저가 해석한)
+                if (src && !src.startsWith('data:') && fullSrc) {
+                    data.push({ original: src, full: fullSrc });
+                }
             });
-            return [...new Set(urls)];
+            // 중복 제거
+            const seen = new Set();
+            return data.filter(d => {
+                if (seen.has(d.full)) return false;
+                seen.add(d.full);
+                return true;
+            });
         });
         
         // 디렉토리 생성
@@ -837,31 +847,39 @@ async function quickScrape(url, outputDir) {
         await fs.writeFile(cssPath, allCss, 'utf-8');
         
         // 이미지 다운로드 (병렬)
-        console.log(`[Quick] 이미지 ${imageUrls.length}개 다운로드 중...`);
-        const imageMap = {};
+        console.log(`[Quick] 이미지 ${imageData.length}개 다운로드 중...`);
+        const imageMap = {}; // original path → local path
         
-        await Promise.all(imageUrls.slice(0, 50).map(async (imgUrl, i) => {
+        await Promise.all(imageData.slice(0, 50).map(async (imgInfo, i) => {
             try {
-                const response = await page.request.get(imgUrl, { timeout: 5000 });
+                const response = await page.request.get(imgInfo.full, { timeout: 5000 });
                 if (response.ok()) {
-                    let ext = path.extname(new URL(imgUrl).pathname).toLowerCase();
+                    let ext = path.extname(new URL(imgInfo.full).pathname).toLowerCase();
                     if (!['.jpg', '.jpeg', '.png', '.gif', '.webp', '.svg'].includes(ext)) ext = '.jpg';
                     const filename = `img_${i}${ext}`;
                     await fs.writeFile(path.join(imgDir, filename), await response.body());
-                    imageMap[imgUrl] = `assets/img/${filename}`;
+                    // 원본 속성값을 로컬 경로로 매핑
+                    imageMap[imgInfo.original] = `assets/img/${filename}`;
                 }
             } catch(e) {}
         }));
         
-        // HTML에서 이미지 경로 교체
+        // HTML에서 이미지 경로 교체 (원본 속성값 기준)
         let finalHtml = html;
-        for (const [originalUrl, localPath] of Object.entries(imageMap)) {
-            finalHtml = finalHtml.split(originalUrl).join(localPath);
+        for (const [originalPath, localPath] of Object.entries(imageMap)) {
+            // src="원본경로" 형태로 교체
+            finalHtml = finalHtml.split(`src="${originalPath}"`).join(`src="${localPath}"`);
+            finalHtml = finalHtml.split(`src='${originalPath}'`).join(`src='${localPath}'`);
         }
         
         // CSS 링크 추가, 기존 link 태그 제거
         finalHtml = finalHtml.replace(/<link[^>]*rel=["']stylesheet["'][^>]*>/gi, '');
         finalHtml = finalHtml.replace('</head>', '<link rel="stylesheet" href="assets/css/style.css">\n</head>');
+        
+        // DOCTYPE 추가
+        if (!finalHtml.toLowerCase().startsWith('<!doctype')) {
+            finalHtml = '<!DOCTYPE html>\n' + finalHtml;
+        }
         
         // HTML 저장
         await fs.writeFile(path.join(outputDir, 'index.html'), finalHtml, 'utf-8');
