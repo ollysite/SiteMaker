@@ -3,10 +3,11 @@ import path from 'path';
 import fs from 'fs-extra';
 import { fileURLToPath } from 'url';
 import archiver from 'archiver';
-import { scrapeSite, detectSiteMenus } from './scraper.js';
+import { scrapeSite, detectSiteMenus, setProgressCallback } from './scraper.js';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import dotenv from 'dotenv';
 import { PATHS, SERVER_CONFIG } from './config/constants.js';
+import { geminiService } from './services/gemini.js';
 
 dotenv.config();
 
@@ -22,6 +23,41 @@ const app = express();
 const PORT = process.env.PORT || SERVER_CONFIG.DEFAULT_PORT;
 
 app.use(express.json());
+
+// [Middleware] FastAPI 프록시 (/api/v1/* → localhost:8000)
+const FASTAPI_URL = process.env.FASTAPI_URL || 'http://localhost:8000';
+
+app.use('/api/v1', async (req, res) => {
+    try {
+        const targetUrl = `${FASTAPI_URL}/api/v1${req.url}`;
+        const { default: fetch } = await import('node-fetch');
+        
+        const options = {
+            method: req.method,
+            headers: {
+                'Content-Type': 'application/json',
+                ...req.headers
+            }
+        };
+        
+        if (['POST', 'PATCH', 'PUT'].includes(req.method) && req.body) {
+            options.body = JSON.stringify(req.body);
+        }
+        
+        const response = await fetch(targetUrl, options);
+        const data = await response.text();
+        
+        res.status(response.status);
+        res.set('Content-Type', response.headers.get('content-type') || 'application/json');
+        res.send(data);
+    } catch (error) {
+        console.error('[FastAPI Proxy Error]', error.message);
+        res.status(502).json({ 
+            error: 'FastAPI 서버에 연결할 수 없습니다',
+            detail: error.message 
+        });
+    }
+});
 
 // [Middleware] 정적 파일 서빙 (AI Editor 스크립트 주입 제거됨 - viewer.html 사용)
 app.use(express.static('public'));
@@ -151,6 +187,129 @@ app.put('/api/projects/:id/rename', async (req, res) => {
     }
 });
 
+// API: 프로젝트 이름 변경 (POST)
+app.post('/api/project/rename', async (req, res) => {
+    const { projectId, newName } = req.body;
+    
+    if (!projectId || !newName) {
+        return res.status(400).json({ error: '프로젝트 ID와 새 이름이 필요합니다.' });
+    }
+
+    try {
+        const projects = await getProjects();
+        const project = projects.find(p => p.id === projectId);
+        
+        if (!project) {
+            return res.status(404).json({ error: '프로젝트를 찾을 수 없습니다.' });
+        }
+
+        project.name = newName.trim();
+        project.domain = newName.trim();
+        await saveProject(project);
+        
+        res.json({ success: true });
+    } catch (e) {
+        console.error('Rename error:', e);
+        res.status(500).json({ error: '이름 변경 실패' });
+    }
+});
+
+// API: 프로젝트 복제
+app.post('/api/project/duplicate', async (req, res) => {
+    const { projectId } = req.body;
+    
+    if (!projectId) {
+        return res.status(400).json({ error: '프로젝트 ID가 필요합니다.' });
+    }
+
+    try {
+        const projects = await getProjects();
+        const original = projects.find(p => p.id === projectId);
+        
+        if (!original) {
+            return res.status(404).json({ error: '프로젝트를 찾을 수 없습니다.' });
+        }
+
+        // 새 프로젝트 ID 생성
+        const newId = `${Date.now()}-${Math.random().toString(36).substring(2, 8)}`;
+        const newName = `${original.name || original.domain || '프로젝트'} (복사본)`;
+        
+        // 프로젝트 폴더 복사
+        const srcDir = path.join(PROJECTS_DIR, projectId);
+        const destDir = path.join(PROJECTS_DIR, newId);
+        
+        if (await fs.pathExists(srcDir)) {
+            await fs.copy(srcDir, destDir);
+        }
+        
+        // 새 프로젝트 데이터 생성
+        const newProject = {
+            ...original,
+            id: newId,
+            name: newName,
+            domain: newName,
+            createdAt: new Date().toISOString()
+        };
+        
+        await saveProject(newProject);
+        
+        res.json({ success: true, projectId: newId });
+    } catch (e) {
+        console.error('Duplicate error:', e);
+        res.status(500).json({ error: '복제 실패' });
+    }
+});
+
+// API: 프로젝트 삭제 (POST)
+app.post('/api/project/delete', async (req, res) => {
+    const { projectId } = req.body;
+    
+    if (!projectId) {
+        return res.status(400).json({ error: '프로젝트 ID가 필요합니다.' });
+    }
+
+    try {
+        await deleteProject(projectId);
+        res.json({ success: true });
+    } catch (e) {
+        console.error('Delete error:', e);
+        res.status(500).json({ error: '삭제 실패' });
+    }
+});
+
+// 스크래핑 진행 상황 저장 (SSE용)
+let scrapeProgressClients = [];
+let lastScrapeProgress = null;
+
+// API: 스크래핑 진행 상황 SSE
+app.get('/api/scrape-status', (req, res) => {
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+    res.flushHeaders();
+    
+    // 클라이언트 추가
+    scrapeProgressClients.push(res);
+    
+    // 마지막 진행 상황 전송
+    if (lastScrapeProgress) {
+        res.write(`data: ${JSON.stringify(lastScrapeProgress)}\n\n`);
+    }
+    
+    // 연결 종료 시 클라이언트 제거
+    req.on('close', () => {
+        scrapeProgressClients = scrapeProgressClients.filter(c => c !== res);
+    });
+});
+
+// 진행 상황 브로드캐스트
+function broadcastProgress(data) {
+    lastScrapeProgress = data;
+    scrapeProgressClients.forEach(client => {
+        client.write(`data: ${JSON.stringify(data)}\n\n`);
+    });
+}
+
 // API: 스크래핑 요청 (새 프로젝트 생성)
 app.post('/api/scrape', handleScrapeRequest);
 
@@ -170,6 +329,52 @@ app.get('/api/files', async (req, res) => {
     } catch (error) {
         console.error(error);
         res.status(500).json({ error: '파일 목록 조회 실패' });
+    }
+});
+
+// API: 파일 내용 조회
+app.get('/api/file-content', async (req, res) => {
+    const { projectId, file } = req.query;
+    if (!projectId || !file) {
+        return res.status(400).json({ error: 'projectId와 file 필수' });
+    }
+    
+    const targetDir = path.join(PROJECTS_DIR, projectId);
+    const safePath = path.normalize(file).replace(/^(\.\.[\/\\])+/, '');
+    const fullPath = path.join(targetDir, safePath);
+    
+    try {
+        // 보안: 프로젝트 디렉토리 외부 접근 방지
+        if (!fullPath.startsWith(targetDir)) {
+            return res.status(403).json({ error: '접근 거부' });
+        }
+        
+        if (!await fs.pathExists(fullPath)) {
+            return res.status(404).json({ error: '파일 없음' });
+        }
+        
+        const stats = await fs.stat(fullPath);
+        if (stats.isDirectory()) {
+            return res.status(400).json({ error: '디렉토리입니다' });
+        }
+        
+        // 이미지 파일은 바이너리로 처리
+        const ext = path.extname(fullPath).toLowerCase();
+        const imageExts = ['.png', '.jpg', '.jpeg', '.gif', '.webp', '.svg', '.ico'];
+        
+        if (imageExts.includes(ext)) {
+            return res.json({ 
+                isImage: true, 
+                url: `/projects/${projectId}/${safePath}` 
+            });
+        }
+        
+        // 텍스트 파일
+        const content = await fs.readFile(fullPath, 'utf-8');
+        res.json({ content });
+    } catch (error) {
+        console.error('파일 읽기 오류:', error);
+        res.status(500).json({ error: '파일 읽기 실패' });
     }
 });
 
@@ -557,6 +762,58 @@ app.post('/api/detect-menus', async (req, res) => {
 // API: 실시간 스크래핑 (SSE 포함)
 app.post('/api/scrape-realtime', handleRealtimeScrapeRequest);
 
+// API: AI 채팅 (스트리밍)
+app.post('/api/ai-chat', async (req, res) => {
+    const { message, history, context } = req.body;
+    
+    if (!message) {
+        return res.status(400).json({ error: '메시지를 입력해주세요.' });
+    }
+    
+    // 스트리밍 응답 설정
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+    res.flushHeaders();
+    
+    try {
+        for await (const chunk of geminiService.chatStream(message, history || [], context || {})) {
+            res.write(`data: ${JSON.stringify({ text: chunk })}\n\n`);
+        }
+        res.write(`data: ${JSON.stringify({ done: true })}\n\n`);
+    } catch (error) {
+        console.error('[AI Chat Error]', error);
+        res.write(`data: ${JSON.stringify({ error: error.message })}\n\n`);
+    } finally {
+        res.end();
+    }
+});
+
+// API: AI 컴포넌트 생성
+app.post('/api/ai-generate', async (req, res) => {
+    const { description, framework } = req.body;
+    
+    if (!description) {
+        return res.status(400).json({ error: '컴포넌트 설명을 입력해주세요.' });
+    }
+    
+    try {
+        const result = await geminiService.generateComponent(description, framework || 'html');
+        res.json(result);
+    } catch (error) {
+        console.error('[AI Generate Error]', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+// API: Gemini 상태 확인
+app.get('/api/ai-status', (req, res) => {
+    res.json({
+        configured: geminiService.isConfigured(),
+        model: 'gemini-2.0-flash-exp'
+    });
+});
+
 // 전역 에러 핸들링 미들웨어
 app.use((err, req, res, next) => {
     console.error('[Global Error Handler]', err);
@@ -590,17 +847,28 @@ async function handleScrapeRequest(req, res) {
     /** @type {Project} */
     const project = { id, domain, url, createdAt: new Date().toISOString(), spaMode };
 
+    // 진행 콜백 설정 (SSE로 전송)
+    setProgressCallback(broadcastProgress);
+
     try {
         console.log(`[Server] 새 프로젝트 시작: ${id} (${url})`);
         await fs.ensureDir(projectDir);
         await scrapeSite(url, spaMode, null, projectDir);
         await saveProject(project);
-        res.json({ success: true, projectId: id });
+        
+        // 페이지 수 계산
+        const files = await fs.readdir(projectDir);
+        const pageCount = files.filter(f => f.endsWith('.html')).length;
+        
+        res.json({ success: true, projectId: id, pageCount });
     } catch (error) {
         console.error('[Server] 에러:', error);
         await fs.remove(projectDir).catch(() => {});
         const message = error.message || '스크래핑 실패';
         res.status(500).json({ success: false, error: message, code: 'SCRAPING_ERROR' });
+    } finally {
+        // 콜백 초기화
+        setProgressCallback(null);
     }
 }
 

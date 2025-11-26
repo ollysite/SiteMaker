@@ -245,3 +245,91 @@ export function getProfileConfig(profileName) {
         ...profile
     };
 }
+
+// ============================================================================
+// 🆕 SPA 앱 전용 설정 (마크다운 에디터, 노트 앱 등)
+// ============================================================================
+export const SPA_APP_CONFIG = {
+    // 동적 콘텐츠 안정화 대기
+    CONTENT_STABILIZATION: {
+        ENABLED: true,
+        CHECK_INTERVAL: 300,        // DOM 변경 체크 간격 (ms)
+        STABLE_DURATION: 800,       // 변경 없음 유지 시간 (ms)
+        MAX_WAIT: 5000,             // 최대 대기 시간 (ms)
+        MUTATION_THRESHOLD: 5       // 무시할 최소 변경 수
+    },
+    
+    // Contenteditable/Textarea 처리
+    EDITABLE_CONTENT: {
+        CAPTURE_TEXTAREA: true,     // textarea 내용 캡처
+        CAPTURE_CONTENTEDITABLE: true, // contenteditable 내용 캡처
+        CAPTURE_INPUT: true,        // input 필드 값 캡처
+        PRESERVE_MARKDOWN: true,    // 마크다운 원본 보존 시도
+        MAX_CONTENT_LENGTH: 100000  // 캡처할 최대 텍스트 길이
+    },
+    
+    // Shadow DOM 지원
+    SHADOW_DOM: {
+        ENABLED: true,
+        MAX_DEPTH: 5,               // Shadow DOM 탐색 깊이
+        INLINE_STYLES: true         // Shadow DOM 스타일 인라인화
+    },
+    
+    // SPA 라우팅 감지
+    ROUTING: {
+        DETECT_HASH_CHANGE: true,   // #hash 변경 감지
+        DETECT_PUSHSTATE: true,     // history.pushState 감지
+        VIRTUAL_NAVIGATION_WAIT: 1000, // 가상 네비게이션 후 대기
+        CAPTURE_ON_ROUTE_CHANGE: true  // 라우트 변경 시 자동 캡처
+    },
+    
+    // 웹 컴포넌트/프레임워크 감지
+    FRAMEWORK_DETECTION: {
+        REACT: ['[data-reactroot]', '#root', '#__next', '[class*="react"]'],
+        VUE: ['[data-v-]', '#app', '[v-cloak]', '[class*="vue"]'],
+        ANGULAR: ['[ng-app]', 'app-root', '[_ngcontent]'],
+        SVELTE: ['[class*="svelte-"]'],
+        LIT: ['[part]', ':host'],
+        CUSTOM_ELEMENTS: true
+    },
+    
+    // 인터랙티브 요소 처리
+    INTERACTIVE_ELEMENTS: {
+        EXPAND_ACCORDIONS: true,    // 아코디언 펼치기
+        OPEN_MODALS: false,         // 모달 열기 (기본 비활성)
+        CLICK_TABS: true,           // 탭 클릭하여 캡처
+        SCROLL_CAROUSELS: true,     // 캐러셀 스크롤
+        WAIT_AFTER_INTERACTION: 500 // 인터랙션 후 대기 (ms)
+    }
+};
+
+// ============================================================================
+// 🆕 콘텐츠 추출 패턴 (마크다운, 코드 블록 등)
+// ============================================================================
+export const CONTENT_PATTERNS = {
+    // 마크다운 콘텐츠 감지
+    MARKDOWN: {
+        SELECTORS: [
+            '[class*="markdown"]', '[class*="prose"]',
+            '[class*="editor"]', '[class*="content"]',
+            '.md-content', '.markdown-body', '.article-content'
+        ],
+        PRESERVE_ELEMENTS: ['pre', 'code', 'blockquote', 'table']
+    },
+    
+    // 코드 블록 처리
+    CODE_BLOCKS: {
+        SELECTORS: ['pre', 'code', '.hljs', '[class*="highlight"]', '.prism'],
+        PRESERVE_LANGUAGE: true,
+        CAPTURE_LINE_NUMBERS: true
+    },
+    
+    // 리치 텍스트 에디터
+    RICH_TEXT: {
+        SELECTORS: [
+            '[contenteditable="true"]',
+            '.ProseMirror', '.ql-editor', '.trix-content',
+            '.fr-view', '.sun-editor-editable', '.jodit-wysiwyg'
+        ]
+    }
+};

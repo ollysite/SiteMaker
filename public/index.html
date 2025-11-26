@@ -1,0 +1,287 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ScraperPark</title>
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css" rel="stylesheet">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-markup.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-css.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-javascript.min.js"></script>
+    <link href="/ui-redesign.css" rel="stylesheet">
+</head>
+<body>
+    <header class="header">
+        <div class="logo"><img src="/favicon.svg" alt=""><span>ScraperPark</span></div>
+        <div class="nav-tabs">
+            <button class="nav-tab active" onclick="switchMode('home')" id="tabHome">홈</button>
+            <button class="nav-tab" onclick="switchMode('scraper')" id="tabScraper">스크래퍼</button>
+            <button class="nav-tab" onclick="switchMode('canvas')" id="tabCanvas">캔버스</button>
+        </div>
+        <div class="header-right">
+            <button class="icon-btn" title="설정"><i data-lucide="settings"></i></button>
+        </div>
+    </header>
+
+    <main class="main-content">
+        <!-- 홈/대시보드 -->
+        <section class="view active" id="homeView">
+            <div class="dashboard">
+                <div class="dashboard-header">
+                    <div>
+                        <h1>내 프로젝트</h1>
+                        <p>웹사이트 스크래핑 프로젝트</p>
+                    </div>
+                    <div class="header-actions">
+                        <button class="primary-btn" onclick="openNewProjectModal()">
+                            <i data-lucide="plus"></i> 새 프로젝트
+                        </button>
+                    </div>
+                </div>
+                
+                <!-- 프로젝트 관리 툴바 -->
+                <div class="project-toolbar" id="projectToolbar" style="display:none;">
+                    <div class="toolbar-left">
+                        <label class="checkbox-label">
+                            <input type="checkbox" id="selectAllCheckbox" onchange="toggleSelectAll()">
+                            <span>전체 선택</span>
+                        </label>
+                        <span class="selected-count" id="selectedCount">0개 선택</span>
+                    </div>
+                    <div class="toolbar-right">
+                        <button class="toolbar-btn" onclick="duplicateSelected()" title="복제">
+                            <i data-lucide="copy"></i> 복제
+                        </button>
+                        <button class="toolbar-btn danger" onclick="deleteSelectedProjects()" title="삭제">
+                            <i data-lucide="trash-2"></i> 삭제
+                        </button>
+                    </div>
+                </div>
+                
+                <div class="projects-grid" id="projectsGrid"></div>
+            </div>
+        </section>
+
+        <!-- 스크래퍼 -->
+        <section class="view" id="scraperView">
+            <aside class="sidebar">
+                <div class="sidebar-header">AI 채팅</div>
+                <div class="chat-area" id="chatArea">
+                    <div class="chat-msg bot"><div class="avatar">🤖</div><div class="content">URL을 입력하면 웹사이트를 복제합니다.</div></div>
+                </div>
+                <div class="selected-bar" id="selectedBar" style="display:none;">
+                    <span id="selectedInfo">선택된 요소</span>
+                    <button onclick="clearSelection()">×</button>
+                </div>
+                <div class="input-area">
+                    <textarea id="chatInput" placeholder="URL 또는 수정 요청..." rows="2"></textarea>
+                    <button class="send-btn" onclick="sendMessage()"><i data-lucide="arrow-up"></i></button>
+                </div>
+            </aside>
+            
+            <div class="workspace">
+                <div class="toolbar">
+                    <div class="tool-group" id="projectTools" style="display:none;">
+                        <button class="tool-btn" onclick="setDevice('mobile')" id="btnMobile" title="모바일"><i data-lucide="smartphone"></i></button>
+                        <button class="tool-btn active" onclick="setDevice('desktop')" id="btnDesktop" title="데스크톱"><i data-lucide="monitor"></i></button>
+                        <div class="tool-divider"></div>
+                        <div class="view-toggle" id="viewToggle">
+                            <button class="toggle-btn active" onclick="setView('preview')" id="btnPreview" title="미리보기"><i data-lucide="eye"></i></button>
+                            <button class="toggle-btn" onclick="setView('code')" id="btnCode" title="코드"><i data-lucide="code-2"></i></button>
+                        </div>
+                    </div>
+                    <div class="tool-group" id="projectTools2" style="display:none;">
+                        <button class="tool-btn" onclick="toggleAiBrush()" id="btnBrush" title="AI 브러시"><i data-lucide="wand-2"></i></button>
+                        <button class="tool-btn" onclick="downloadProject()" title="다운로드"><i data-lucide="download"></i></button>
+                    </div>
+                </div>
+                
+                <div class="preview-wrapper">
+                    <!-- 프리뷰 영역 -->
+                    <div class="preview-area" id="previewArea">
+                        <iframe id="previewFrame" class="preview-frame"></iframe>
+                        <div class="empty-state" id="emptyState">
+                            <i data-lucide="globe"></i>
+                            <p>웹사이트 URL을 입력하세요</p>
+                        </div>
+                        <div class="loading" id="loading" style="display:none;">
+                            <div class="spinner"></div>
+                            <p id="loadingText">로딩 중...</p>
+                        </div>
+                    </div>
+                    
+                    <!-- IDE 코드 에디터 -->
+                    <div class="ide-container" id="ideContainer" style="display:none;">
+                        <div class="ide-sidebar">
+                            <div class="ide-sidebar-header">
+                                <i data-lucide="folder-tree"></i>
+                                <span>파일 탐색기</span>
+                            </div>
+                            <div class="ide-file-tree" id="ideFileTree"></div>
+                        </div>
+                        <div class="ide-editor">
+                            <div class="ide-tabs" id="ideTabs">
+                                <div class="ide-tab-placeholder">파일을 선택하세요</div>
+                            </div>
+                            <div class="ide-code-area">
+                                <div class="ide-line-numbers" id="ideLineNumbers"></div>
+                                <pre class="ide-code-content" id="ideCodeContent"><code></code></pre>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- AI 채팅 패널 -->
+                    <div class="ai-chat-panel" id="aiChatPanel" style="display:none;">
+                        <div class="chat-header">
+                            <div class="chat-title">
+                                <i data-lucide="sparkles"></i>
+                                <span>AI 어시스턴트</span>
+                            </div>
+                            <div class="chat-status" id="chatStatus">
+                                <span class="status-dot"></span>
+                                <span class="status-text">체크 중...</span>
+                            </div>
+                            <button class="chat-close" onclick="toggleAiChat()"><i data-lucide="x"></i></button>
+                        </div>
+                        <div class="chat-messages" id="chatMessages">
+                            <div class="chat-welcome">
+                                <i data-lucide="wand-2"></i>
+                                <p>AI 브러시로 요소를 선택하고<br>수정 요청을 입력하세요</p>
+                            </div>
+                        </div>
+                        <div class="chat-selected" id="selectedBar" style="display:none;">
+                            <span id="selectedInfo"></span>
+                            <button onclick="clearSelection()"><i data-lucide="x"></i></button>
+                        </div>
+                        <div class="chat-input-area">
+                            <textarea id="chatInput" placeholder="수정 요청 입력... (예: 버튼 색상을 파란색으로 변경)" rows="1"></textarea>
+                            <button class="chat-send" onclick="sendAiMessage()"><i data-lucide="send"></i></button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 캔버스 에디터 -->
+        <section class="view" id="canvasView">
+            <aside class="sidebar canvas-sidebar">
+                <div class="sidebar-header">도형 추가</div>
+                <div class="shape-tools">
+                    <button class="shape-btn" onclick="addShape('rect')" title="사각형">
+                        <i data-lucide="square"></i>
+                        <span>사각형</span>
+                    </button>
+                    <button class="shape-btn" onclick="addShape('circle')" title="원">
+                        <i data-lucide="circle"></i>
+                        <span>원</span>
+                    </button>
+                    <button class="shape-btn" onclick="addShape('text')" title="텍스트">
+                        <i data-lucide="type"></i>
+                        <span>텍스트</span>
+                    </button>
+                    <button class="shape-btn" onclick="addShape('image')" title="이미지">
+                        <i data-lucide="image"></i>
+                        <span>이미지</span>
+                    </button>
+                </div>
+                
+                <div class="sidebar-header" style="margin-top:16px;">레이어</div>
+                <div class="layers-list" id="layersList"></div>
+                
+                <div class="sidebar-header" style="margin-top:16px;">속성</div>
+                <div class="properties-panel" id="propertiesPanel">
+                    <p style="color:var(--text-muted);font-size:13px;padding:12px;">요소를 선택하세요</p>
+                </div>
+            </aside>
+            
+            <div class="canvas-workspace">
+                <div class="canvas-toolbar">
+                    <div class="tool-group">
+                        <button class="tool-btn" onclick="canvasUndo()" title="실행 취소 (Ctrl+Z)"><i data-lucide="undo-2"></i></button>
+                        <button class="tool-btn" onclick="canvasRedo()" title="다시 실행 (Ctrl+Y)"><i data-lucide="redo-2"></i></button>
+                    </div>
+                    <div class="tool-group">
+                        <button class="tool-btn" onclick="bringToFront()" title="맨 앞으로"><i data-lucide="chevrons-up"></i></button>
+                        <button class="tool-btn" onclick="bringForward()" title="앞으로"><i data-lucide="chevron-up"></i></button>
+                        <button class="tool-btn" onclick="sendBackward()" title="뒤로"><i data-lucide="chevron-down"></i></button>
+                        <button class="tool-btn" onclick="sendToBack()" title="맨 뒤로"><i data-lucide="chevrons-down"></i></button>
+                    </div>
+                    <div class="tool-group">
+                        <button class="tool-btn" onclick="deleteSelected()" title="삭제 (Delete)"><i data-lucide="trash-2"></i></button>
+                    </div>
+                    <div style="flex:1;"></div>
+                    <div class="tool-group">
+                        <button class="tool-btn primary-tool" onclick="saveCanvas()">
+                            <i data-lucide="save"></i> 저장
+                        </button>
+                    </div>
+                </div>
+                
+                <div class="canvas-container" id="canvasContainer">
+                    <div class="canvas-stage" id="canvasStage">
+                        <!-- 캔버스가 여기에 렌더링됨 -->
+                    </div>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <!-- 새 프로젝트 모달 -->
+    <div class="modal-overlay" id="newProjectModal" style="display:none;">
+        <div class="modal-container">
+            <div class="modal-header">
+                <div class="modal-icon">
+                    <i data-lucide="globe"></i>
+                </div>
+                <h2>새 프로젝트</h2>
+                <p>스크래핑할 웹사이트 주소를 입력하세요</p>
+            </div>
+            <div class="modal-body">
+                <div class="modal-input-group">
+                    <label>웹사이트 URL</label>
+                    <div class="modal-input-wrapper">
+                        <i data-lucide="link"></i>
+                        <input type="text" id="modalUrlInput" placeholder="example.com" autocomplete="off">
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="modal-btn secondary" onclick="closeNewProjectModal()">취소</button>
+                <button class="modal-btn primary" onclick="startNewProject()">
+                    <i data-lucide="sparkles"></i> 시작하기
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- AI 로딩 오버레이 -->
+    <div class="ai-loading-overlay" id="aiLoadingOverlay" style="display:none;">
+        <div class="ai-loading-content">
+            <div class="ai-orb">
+                <div class="orb-ring"></div>
+                <div class="orb-ring"></div>
+                <div class="orb-ring"></div>
+                <div class="orb-core">
+                    <i data-lucide="bot"></i>
+                </div>
+            </div>
+            <div class="ai-loading-text">
+                <h3 id="aiLoadingTitle">웹사이트 분석 중</h3>
+                <p id="aiLoadingStatus">AI가 페이지 구조를 파악하고 있습니다...</p>
+            </div>
+            <div class="ai-loading-progress">
+                <div class="progress-bar">
+                    <div class="progress-fill" id="aiProgressFill"></div>
+                </div>
+                <span class="progress-text" id="aiProgressText">0%</span>
+            </div>
+        </div>
+    </div>
+
+    <script src="/ui-main.js"></script>
+    <script src="/canvas-editor.js"></script>
+</body>
+</html>

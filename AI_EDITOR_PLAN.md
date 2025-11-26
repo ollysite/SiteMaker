@@ -4,14 +4,81 @@
 
 모든 1~3단계 기능이 **구현 완료**되었습니다!
 
-## 1. 🖱️ 시각적 요소 선택 (Visual Element Selector) - **최우선 추천**
+**[최신 업데이트]**
+- **요소 선택 기능 (Selector Mode)**: UI에 '선택' 버튼 추가, 호버 하이라이팅 및 클릭 선택 구현 완료. 선택된 요소의 컨텍스트가 AI에게 전달됩니다.
+- **실행 취소 (Undo)**: UI에 '취소' 버튼 추가, 백업 파일 복원 로직 구현 완료.
+
+---
+
+# 🕷️ 스크래퍼 개선 사항 (SPA 앱 지원 강화)
+
+## ✅ 구현 완료된 SPA 기능
+
+### 1. 동적 콘텐츠 안정화 대기
+- DOM MutationObserver를 통해 콘텐츠 변경이 멈출 때까지 대기
+- 설정: `SPA_APP_CONFIG.CONTENT_STABILIZATION`
+
+### 2. SPA 프레임워크 자동 감지
+- React, Vue, Angular, Svelte 프레임워크 자동 감지
+- 감지 신뢰도(%) 표시
+- 설정: `SPA_APP_CONFIG.FRAMEWORK_DETECTION`
+
+### 3. 편집 가능 콘텐츠 캡처
+- `<textarea>`, `contenteditable`, `<input>` 요소의 값 캡처
+- 마크다운 에디터 콘텐츠 보존 (ProseMirror, CodeMirror 등)
+- 별도 JSON 파일로 원본 콘텐츠 저장
+- 설정: `SPA_APP_CONFIG.EDITABLE_CONTENT`
+
+### 4. Shadow DOM 지원
+- 웹 컴포넌트 내부 콘텐츠 추출
+- Shadow DOM 스타일 인라인화
+- 설정: `SPA_APP_CONFIG.SHADOW_DOM`
+
+### 5. 인터랙티브 요소 확장
+- 탭 자동 클릭하여 모든 콘텐츠 캡처
+- 아코디언/details 요소 자동 펼치기
+- 설정: `SPA_APP_CONFIG.INTERACTIVE_ELEMENTS`
+
+### 6. 콘텐츠 패턴 인식
+- 마크다운 콘텐츠 자동 감지
+- 코드 블록 보존
+- 리치 텍스트 에디터 지원
+- 설정: `CONTENT_PATTERNS`
+
+---
+
+# 🎨 프로젝트 뷰어 UI 개선
+
+## ✅ 구현 완료된 UI 기능
+
+### 1. Preview / Code 토글
+- 상단 헤더에 Preview/Code 뷰 전환 버튼 추가
+- Preview 모드: iframe으로 사이트 미리보기
+- Code 모드: 소스 코드 직접 확인
+
+### 2. 코드 에디터 UI
+- **Prism.js 기반 구문 강조** (HTML, CSS, JavaScript)
+- **줄 번호 표시**
+- **파일 탭 바**: 여러 파일 동시 열기, 탭 닫기
+- **미니 파일 트리**: 폴더 펼침/접기, 파일 타입별 아이콘 색상
+- **상태 바**: 파일 경로, 줄 수, 파일 크기 표시
+
+### 3. 파일 트리 UI 개선
+- 폴더 화살표 아이콘 (펼침/접기)
+- 파일 타입별 색상 구분
+  - HTML: 🟠 오렌지
+  - CSS: 🟣 보라
+  - JS: 🟡 노랑
+  - JSON: 🔵 파랑
+
+## 1. 🖱️ 시각적 요소 선택 (Visual Element Selector) - **구현 완료**
 사용자가 텍스트로 "상단 메뉴바 바꿔줘"라고 설명하는 대신, **화면에서 직접 요소를 클릭**하여 수정 대상을 지정하는 기능입니다.
 
 - **기능**: '요소 선택' 버튼 클릭 → 마우스 호버 시 요소 하이라이트 → 클릭 시 해당 요소의 HTML 구조를 AI에게 문맥으로 전달
 - **장점**: AI가 수정해야 할 위치를 정확히 파악하여 오수정 확률 대폭 감소
 - **구현**: `mouseover/click` 이벤트 리스너 주입, 선택된 요소의 `outerHTML` 및 CSS Selector 추출
 
-## 2. ↩️ 실행 취소 (Undo) 및 히스토리
+## 2. ↩️ 실행 취소 (Undo) 및 히스토리 - **구현 완료**
 AI가 코드를 망가뜨렸을 때 즉시 되돌릴 수 있는 안전장치입니다.
 
 - **기능**: 수정 완료 후 "실행 취소" 버튼 표시. 클릭 시 백업 파일(`.backup`)로 복원.

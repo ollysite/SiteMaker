@@ -1,0 +1,764 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ScraperPark Studio</title>
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+    <link href="/styles.css" rel="stylesheet">
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <!-- Prism.js for Syntax Highlighting -->
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css" rel="stylesheet">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-css.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-javascript.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-markup.min.js"></script>
+    <style>
+        /* 통합 네비게이션 스타일 */
+        .top-nav {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 56px;
+            background: #0f172a;
+            border-bottom: 1px solid #1e293b;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0 20px;
+            z-index: 1000;
+        }
+        
+        .nav-brand {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            font-weight: 700;
+            font-size: 18px;
+            color: #f8fafc;
+        }
+        
+        .nav-brand img {
+            width: 32px;
+            height: 32px;
+        }
+        
+        .nav-tabs {
+            display: flex;
+            gap: 4px;
+            background: #1e293b;
+            padding: 4px;
+            border-radius: 10px;
+        }
+        
+        .nav-tab {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 16px;
+            border-radius: 8px;
+            background: transparent;
+            border: none;
+            color: #94a3b8;
+            font-size: 14px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        
+        .nav-tab:hover {
+            color: #f8fafc;
+            background: #334155;
+        }
+        
+        .nav-tab.active {
+            background: #6366f1;
+            color: white;
+        }
+        
+        .nav-actions {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+        
+        .nav-icon-btn {
+            width: 36px;
+            height: 36px;
+            border-radius: 8px;
+            background: transparent;
+            border: none;
+            color: #94a3b8;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.2s;
+        }
+        
+        .nav-icon-btn:hover {
+            background: #1e293b;
+            color: #f8fafc;
+        }
+        
+        /* 메인 컨테이너 조정 */
+        body {
+            padding-top: 56px;
+        }
+        
+        .main-container {
+            display: flex;
+            height: calc(100vh - 56px);
+        }
+        
+        /* 대시보드 스타일 */
+        .dashboard {
+            display: none;
+            flex: 1;
+            padding: 32px;
+            background: #0f172a;
+            overflow-y: auto;
+        }
+        
+        .dashboard.active {
+            display: block;
+        }
+        
+        .dashboard-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 32px;
+        }
+        
+        .dashboard-title {
+            font-size: 28px;
+            font-weight: 700;
+            color: #f8fafc;
+        }
+        
+        .dashboard-subtitle {
+            color: #94a3b8;
+            margin-top: 4px;
+        }
+        
+        .new-project-btn {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 12px 24px;
+            background: #6366f1;
+            color: white;
+            border: none;
+            border-radius: 10px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        
+        .new-project-btn:hover {
+            background: #4f46e5;
+        }
+        
+        .project-type-tabs {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 24px;
+        }
+        
+        .type-tab {
+            padding: 8px 16px;
+            background: transparent;
+            border: 1px solid #334155;
+            border-radius: 8px;
+            color: #94a3b8;
+            font-size: 13px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        
+        .type-tab:hover {
+            border-color: #6366f1;
+            color: #f8fafc;
+        }
+        
+        .type-tab.active {
+            background: #6366f1;
+            border-color: #6366f1;
+            color: white;
+        }
+        
+        .projects-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+            gap: 20px;
+        }
+        
+        .project-card {
+            background: #1e293b;
+            border: 1px solid #334155;
+            border-radius: 12px;
+            overflow: hidden;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        
+        .project-card:hover {
+            border-color: #6366f1;
+            transform: translateY(-2px);
+        }
+        
+        .project-thumbnail {
+            height: 160px;
+            background: #0f172a;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 48px;
+        }
+        
+        .project-info {
+            padding: 16px;
+        }
+        
+        .project-name {
+            font-weight: 600;
+            color: #f8fafc;
+            margin-bottom: 4px;
+        }
+        
+        .project-meta {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 12px;
+            color: #64748b;
+        }
+        
+        .project-type-badge {
+            padding: 2px 8px;
+            background: #334155;
+            border-radius: 4px;
+            font-size: 11px;
+        }
+        
+        .project-type-badge.scrape { background: #1e3a5f; color: #60a5fa; }
+        .project-type-badge.canvas { background: #3b1f5e; color: #a78bfa; }
+        
+        .empty-projects {
+            grid-column: 1 / -1;
+            text-align: center;
+            padding: 80px 20px;
+            color: #64748b;
+        }
+        
+        .empty-projects-icon {
+            font-size: 64px;
+            margin-bottom: 16px;
+        }
+        
+        /* 스크래퍼/에디터 모드 */
+        .scraper-mode {
+            display: none;
+            flex: 1;
+        }
+        
+        .scraper-mode.active {
+            display: flex;
+        }
+        
+        /* 캔버스 모드 (iframe으로 React 앱 로드) */
+        .canvas-mode {
+            display: none;
+            flex: 1;
+        }
+        
+        .canvas-mode.active {
+            display: block;
+        }
+        
+        .canvas-iframe {
+            width: 100%;
+            height: 100%;
+            border: none;
+        }
+        
+        /* 새 프로젝트 모달 */
+        .modal-overlay {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.7);
+            z-index: 2000;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        .modal-overlay.active {
+            display: flex;
+        }
+        
+        .modal {
+            background: #1e293b;
+            border-radius: 16px;
+            padding: 32px;
+            width: 90%;
+            max-width: 500px;
+        }
+        
+        .modal-title {
+            font-size: 20px;
+            font-weight: 700;
+            color: #f8fafc;
+            margin-bottom: 24px;
+        }
+        
+        .modal-options {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 16px;
+        }
+        
+        .modal-option {
+            padding: 24px;
+            background: #0f172a;
+            border: 2px solid #334155;
+            border-radius: 12px;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        
+        .modal-option:hover {
+            border-color: #6366f1;
+        }
+        
+        .modal-option-icon {
+            font-size: 40px;
+            margin-bottom: 12px;
+        }
+        
+        .modal-option-title {
+            font-weight: 600;
+            color: #f8fafc;
+            margin-bottom: 4px;
+        }
+        
+        .modal-option-desc {
+            font-size: 12px;
+            color: #64748b;
+        }
+        
+        .modal-close {
+            margin-top: 16px;
+            width: 100%;
+            padding: 12px;
+            background: transparent;
+            border: 1px solid #334155;
+            border-radius: 8px;
+            color: #94a3b8;
+            cursor: pointer;
+        }
+        
+        .modal-close:hover {
+            background: #334155;
+            color: #f8fafc;
+        }
+    </style>
+</head>
+<body>
+    <!-- 상단 네비게이션 -->
+    <nav class="top-nav">
+        <div class="nav-brand">
+            <img src="/favicon.svg" alt="Logo">
+            <span>ScraperPark Studio</span>
+        </div>
+        
+        <div class="nav-tabs">
+            <button class="nav-tab active" onclick="switchMode('dashboard')" id="tabDashboard">
+                <i data-lucide="layout-dashboard" style="width: 16px;"></i>
+                대시보드
+            </button>
+            <button class="nav-tab" onclick="switchMode('scraper')" id="tabScraper">
+                <i data-lucide="globe" style="width: 16px;"></i>
+                스크래퍼
+            </button>
+            <button class="nav-tab" onclick="switchMode('canvas')" id="tabCanvas">
+                <i data-lucide="palette" style="width: 16px;"></i>
+                캔버스
+            </button>
+        </div>
+        
+        <div class="nav-actions">
+            <button class="nav-icon-btn" title="AI 어시스턴트">
+                <i data-lucide="bot" style="width: 18px;"></i>
+            </button>
+            <button class="nav-icon-btn" title="알림">
+                <i data-lucide="bell" style="width: 18px;"></i>
+            </button>
+            <button class="nav-icon-btn" title="설정">
+                <i data-lucide="settings" style="width: 18px;"></i>
+            </button>
+        </div>
+    </nav>
+
+    <!-- 메인 컨테이너 -->
+    <div class="main-container">
+        <!-- 대시보드 -->
+        <div class="dashboard active" id="dashboardView">
+            <div class="dashboard-header">
+                <div>
+                    <div class="dashboard-title">내 프로젝트</div>
+                    <div class="dashboard-subtitle">스크래핑 및 디자인 프로젝트를 관리하세요</div>
+                </div>
+                <button class="new-project-btn" onclick="openNewProjectModal()">
+                    <i data-lucide="plus" style="width: 18px;"></i>
+                    새 프로젝트
+                </button>
+            </div>
+            
+            <div class="project-type-tabs">
+                <button class="type-tab active" onclick="filterProjects('all')">전체</button>
+                <button class="type-tab" onclick="filterProjects('scrape')">🌐 스크래핑</button>
+                <button class="type-tab" onclick="filterProjects('canvas')">🎨 캔버스</button>
+            </div>
+            
+            <div class="projects-grid" id="projectsGrid">
+                <!-- 프로젝트 카드가 동적으로 추가됨 -->
+                <div class="empty-projects">
+                    <div class="empty-projects-icon">📁</div>
+                    <div>프로젝트가 없습니다</div>
+                    <div style="font-size: 13px; margin-top: 8px;">새 프로젝트를 만들어보세요!</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 스크래퍼 모드 -->
+        <div class="scraper-mode" id="scraperView">
+    <!-- Left Panel: Chat & Control -->
+    <aside class="left-panel">
+        <!-- Header -->
+        <div class="header-dropdown">
+            <span>ScraperPark Project</span>
+            <i data-lucide="chevron-down" style="width: 14px; color: #999;"></i>
+        </div>
+
+        <!-- Chat Area -->
+        <div class="chat-area custom-scroll" id="chatArea">
+            <div class="chat-msg bot">
+                <div class="bot-avatar">🤖</div>
+                <div class="bot-content">
+                    <strong>ScraperPark</strong><br>
+                    웹사이트 URL을 입력하면 사이트를 복제해드립니다.
+                </div>
+            </div>
+        </div>
+
+        <!-- 선택된 요소 표시 -->
+        <div id="selectedElementBar" class="selected-element-bar" style="display: none;">
+            <div class="selected-element-info">
+                <i data-lucide="box-select" style="width: 14px;"></i>
+                <span id="selectedElementTag">-</span>
+            </div>
+            <button onclick="clearSelectedElement()" class="clear-selection-btn">
+                <i data-lucide="x" style="width: 14px;"></i>
+            </button>
+        </div>
+
+        <!-- Input Area -->
+        <div class="input-area">
+            <div class="input-box">
+                <textarea id="chatInput" class="input-field" placeholder="스크래핑할 URL을 입력하세요" rows="1"></textarea>
+                <div class="input-actions">
+                    <div></div>
+                    <button class="send-btn" onclick="sendMessage()">
+                        <i data-lucide="arrow-up" style="width: 16px;"></i>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </aside>
+
+    <!-- Right Panel: Canvas -->
+    <main class="right-panel">
+        <!-- Toolbar -->
+        <div class="toolbar">
+            <div class="tool-group">
+                <button class="action-btn" onclick="setDevice('mobile')" id="btnMobile"><i data-lucide="smartphone" style="width: 16px;"></i></button>
+                <button class="action-btn active" onclick="setDevice('desktop')" id="btnDesktop"><i data-lucide="monitor" style="width: 16px;"></i></button>
+            </div>
+
+            <div class="toggle-group">
+                <button class="toggle-btn active" onclick="setViewMode('live')" id="modeLive">
+                    <i data-lucide="globe" style="width: 14px;"></i> Live
+                </button>
+                <button class="toggle-btn" onclick="setViewMode('preview')" id="modePreview">
+                    <i data-lucide="eye" style="width: 14px;"></i> Preview
+                </button>
+                <button class="toggle-btn" onclick="setViewMode('code')" id="modeCode">
+                    <i data-lucide="code" style="width: 14px;"></i> Code
+                </button>
+            </div>
+
+            <div class="tool-group" style="display: flex; gap: 8px;">
+                <button class="action-btn" onclick="toggleFileExplorer()" id="fileExplorerBtn" style="display: none;" title="파일 탐색기">
+                    <i data-lucide="folder-tree" style="width: 16px;"></i>
+                </button>
+                <button class="action-btn ai-brush-btn" onclick="toggleAiBrush()" id="aiBrushBtn" style="display: none;" title="AI 브러시 (요소 선택)">
+                    <i data-lucide="wand-2" style="width: 16px;"></i>
+                </button>
+                <button class="share-btn" onclick="publishProject()" id="publishBtn" style="display: none;">
+                    <i data-lucide="download" style="width: 14px; margin-right: 4px;"></i> Download
+                </button>
+            </div>
+        </div>
+
+        <!-- Canvas -->
+        <div class="canvas-container custom-scroll">
+            <!-- 파일 탐색기 사이드바 -->
+            <div id="fileExplorer" class="file-explorer-sidebar" style="display: none;">
+                <div class="file-explorer-header">
+                    <span>Explorer</span>
+                    <button onclick="toggleFileExplorer()" class="close-explorer-btn">
+                        <i data-lucide="x" style="width: 14px;"></i>
+                    </button>
+                </div>
+                <div id="fileTree" class="file-tree custom-scroll"></div>
+            </div>
+            
+            <!-- 리사이즈 핸들 -->
+            <div id="resizeHandle" class="resize-handle" style="display: none;">
+                <div class="resize-handle-bar"></div>
+            </div>
+            
+            <div class="preview-frame-wrapper" id="canvasWrapper">
+                <iframe id="previewFrame" src="" sandbox="allow-same-origin allow-scripts allow-popups allow-forms"></iframe>
+                
+                <!-- 스크래핑 상태 오버레이 -->
+                <div id="scrapeOverlay" class="hidden" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.85); display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 100;">
+                    <div style="color: white; text-align: center;">
+                        <div class="animate-spin" style="width: 48px; height: 48px; border: 3px solid #333; border-top-color: #3b82f6; border-radius: 50%; margin: 0 auto 16px;"></div>
+                        <div id="scrapeStatus" style="font-size: 14px; margin-bottom: 8px;">스크래핑 준비 중...</div>
+                        <div id="scrapeProgress" style="font-size: 12px; color: #888;"></div>
+                    </div>
+                </div>
+                
+                <!-- 빈 상태 표시 -->
+                <div id="emptyState" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; color: #999; background: #fafafa;">
+                    <i data-lucide="globe" style="width: 64px; height: 64px; stroke-width: 1; margin-bottom: 16px;"></i>
+                    <div style="font-size: 16px; margin-bottom: 8px;">웹사이트 URL을 입력하세요</div>
+                    <div style="font-size: 12px;">예: https://example.com</div>
+                </div>
+                
+                <!-- 코드 뷰어 -->
+                <div id="codeViewer" class="code-viewer-panel" style="display: none;">
+                    <div class="code-viewer-header">
+                        <div class="code-tabs" id="codeTabs">
+                            <!-- 탭이 동적으로 추가됨 -->
+                        </div>
+                    </div>
+                    <div class="code-content-wrapper">
+                        <pre id="codeContent" class="code-content"><code>파일을 선택하세요</code></pre>
+                    </div>
+                    <div class="code-status-bar">
+                        <span id="codeFilePath">-</span>
+                        <span id="codeFileInfo">-</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+        </div><!-- 스크래퍼 모드 종료 -->
+
+        <!-- 캔버스 모드 -->
+        <div class="canvas-mode" id="canvasView">
+            <iframe class="canvas-iframe" id="canvasFrame" src="http://localhost:5173"></iframe>
+        </div>
+    </div><!-- 메인 컨테이너 종료 -->
+
+    <!-- 새 프로젝트 모달 -->
+    <div class="modal-overlay" id="newProjectModal">
+        <div class="modal">
+            <div class="modal-title">새 프로젝트 만들기</div>
+            <div class="modal-options">
+                <div class="modal-option" onclick="createNewProject('scrape')">
+                    <div class="modal-option-icon">🌐</div>
+                    <div class="modal-option-title">웹사이트 스크래핑</div>
+                    <div class="modal-option-desc">URL을 입력하여 웹사이트 복제</div>
+                </div>
+                <div class="modal-option" onclick="createNewProject('canvas')">
+                    <div class="modal-option-icon">🎨</div>
+                    <div class="modal-option-title">캔버스 디자인</div>
+                    <div class="modal-option-desc">Canva 스타일 디자인 에디터</div>
+                </div>
+            </div>
+            <button class="modal-close" onclick="closeNewProjectModal()">취소</button>
+        </div>
+    </div>
+
+    <script src="/canvas-service.js"></script>
+    <script src="/app.js"></script>
+    
+    <script>
+        // ============================================================
+        // 통합 모드 전환
+        // ============================================================
+        
+        let currentMode = 'dashboard';
+        let allProjects = [];
+        
+        function switchMode(mode) {
+            currentMode = mode;
+            
+            // 탭 활성화
+            document.querySelectorAll('.nav-tab').forEach(tab => tab.classList.remove('active'));
+            document.getElementById(`tab${mode.charAt(0).toUpperCase() + mode.slice(1)}`).classList.add('active');
+            
+            // 뷰 전환
+            document.getElementById('dashboardView').classList.remove('active');
+            document.getElementById('scraperView').classList.remove('active');
+            document.getElementById('canvasView').classList.remove('active');
+            document.getElementById(`${mode}View`).classList.add('active');
+            
+            // Lucide 아이콘 재렌더링
+            if (typeof lucide !== 'undefined') {
+                lucide.createIcons();
+            }
+        }
+        
+        // ============================================================
+        // 대시보드 기능
+        // ============================================================
+        
+        async function loadAllProjects() {
+            try {
+                // 스크래핑 프로젝트 로드
+                const scrapeRes = await fetch('/api/projects');
+                const scrapeProjects = await scrapeRes.json();
+                
+                // 캔버스 프로젝트 로드 (FastAPI)
+                let canvasProjects = [];
+                try {
+                    const canvasRes = await fetch('/api/v1/projects/');
+                    if (canvasRes.ok) {
+                        canvasProjects = await canvasRes.json();
+                    }
+                } catch (e) {
+                    console.log('캔버스 프로젝트 로드 실패 (FastAPI 서버 확인 필요)');
+                }
+                
+                // 합치기
+                allProjects = [
+                    ...scrapeProjects.map(p => ({ ...p, type: 'scrape' })),
+                    ...canvasProjects.map(p => ({ ...p, type: 'canvas' }))
+                ];
+                
+                renderProjects(allProjects);
+            } catch (error) {
+                console.error('프로젝트 로드 실패:', error);
+            }
+        }
+        
+        function renderProjects(projects) {
+            const grid = document.getElementById('projectsGrid');
+            
+            if (projects.length === 0) {
+                grid.innerHTML = `
+                    <div class="empty-projects">
+                        <div class="empty-projects-icon">📁</div>
+                        <div>프로젝트가 없습니다</div>
+                        <div style="font-size: 13px; margin-top: 8px;">새 프로젝트를 만들어보세요!</div>
+                    </div>
+                `;
+                return;
+            }
+            
+            grid.innerHTML = projects.map(project => `
+                <div class="project-card" onclick="openProject('${project.id}', '${project.type}')">
+                    <div class="project-thumbnail">
+                        ${project.type === 'scrape' ? '🌐' : '🎨'}
+                    </div>
+                    <div class="project-info">
+                        <div class="project-name">${project.title || project.name || '제목 없음'}</div>
+                        <div class="project-meta">
+                            <span class="project-type-badge ${project.type}">
+                                ${project.type === 'scrape' ? '스크래핑' : '캔버스'}
+                            </span>
+                            <span>${formatDate(project.updated_at || project.createdAt)}</span>
+                        </div>
+                    </div>
+                </div>
+            `).join('');
+        }
+        
+        function filterProjects(type) {
+            document.querySelectorAll('.type-tab').forEach(tab => tab.classList.remove('active'));
+            event.target.classList.add('active');
+            
+            if (type === 'all') {
+                renderProjects(allProjects);
+            } else {
+                renderProjects(allProjects.filter(p => p.type === type));
+            }
+        }
+        
+        function formatDate(dateStr) {
+            if (!dateStr) return '-';
+            const date = new Date(dateStr);
+            return date.toLocaleDateString('ko-KR');
+        }
+        
+        function openProject(id, type) {
+            if (type === 'scrape') {
+                // 스크래퍼 모드로 전환
+                switchMode('scraper');
+                // TODO: 프로젝트 로드
+            } else {
+                // 캔버스 모드로 전환
+                switchMode('canvas');
+                // 캔버스 iframe에 프로젝트 ID 전달
+                const canvasFrame = document.getElementById('canvasFrame');
+                canvasFrame.src = `http://localhost:5173?projectId=${id}`;
+            }
+        }
+        
+        // ============================================================
+        // 모달
+        // ============================================================
+        
+        function openNewProjectModal() {
+            document.getElementById('newProjectModal').classList.add('active');
+        }
+        
+        function closeNewProjectModal() {
+            document.getElementById('newProjectModal').classList.remove('active');
+        }
+        
+        function createNewProject(type) {
+            closeNewProjectModal();
+            
+            if (type === 'scrape') {
+                switchMode('scraper');
+            } else {
+                switchMode('canvas');
+            }
+        }
+        
+        // ============================================================
+        // 초기화
+        // ============================================================
+        
+        document.addEventListener('DOMContentLoaded', () => {
+            loadAllProjects();
+            if (typeof lucide !== 'undefined') {
+                lucide.createIcons();
+            }
+        });
+    </script>
+</body>
+</html>

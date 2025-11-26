@@ -6,7 +6,7 @@ import { chromium } from 'playwright';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import dotenv from 'dotenv';
 import { escapeRegExp, generateContentHash, sanitizeFileName, extractPageNameFromUrl } from './utils/index.js';
-import { PATHS, TIMEOUTS, SCROLL_CONFIG, CRAWL_CONFIG, MENU_DETECTION, FILE_EXTENSIONS, PERFORMANCE_CONFIG, CRAWL_RELIABILITY, CRAWL_PRIORITY } from './config/constants.js';
+import { PATHS, TIMEOUTS, SCROLL_CONFIG, CRAWL_CONFIG, MENU_DETECTION, FILE_EXTENSIONS, PERFORMANCE_CONFIG, CRAWL_RELIABILITY, CRAWL_PRIORITY, SPA_APP_CONFIG, CONTENT_PATTERNS } from './config/constants.js';
 
 dotenv.config();
 
@@ -115,6 +115,11 @@ class SmartCrawlQueue {
 /** @type {(progress: CrawlProgress) => void} */
 let progressCallback = null;
 
+/** 외부에서 진행 콜백 설정 */
+function setProgressCallback(callback) {
+    progressCallback = callback;
+}
+
 function reportProgress(phase, current, total, message, extra = {}) {
     if (progressCallback) {
         progressCallback({ phase, current, total, message, ...extra });
@@ -201,6 +206,334 @@ async function waitForDynamicContent(page) {
 
 // 글로벌 캐시 인스턴스
 let globalCache = new GlobalCache();
+
+// ============================================================================
+// 🆕 SPA 앱 전용 기능 (동적 콘텐츠 안정화, Shadow DOM, 에디터 콘텐츠)
+// ============================================================================
+
+/**
+ * 동적 콘텐츠 안정화 대기 - DOM 변경이 멈출 때까지 대기
+ * @param {import('playwright').Page} page 
+ * @returns {Promise<void>}
+ */
+async function waitForContentStabilization(page) {
+    if (!SPA_APP_CONFIG.CONTENT_STABILIZATION.ENABLED) return;
+    
+    const { CHECK_INTERVAL, STABLE_DURATION, MAX_WAIT, MUTATION_THRESHOLD } = SPA_APP_CONFIG.CONTENT_STABILIZATION;
+    
+    try {
+        await page.evaluate(({ checkInterval, stableDuration, maxWait, threshold }) => {
+            return new Promise((resolve) => {
+                let mutationCount = 0;
+                let lastMutationTime = Date.now();
+                let checkCount = 0;
+                const maxChecks = Math.ceil(maxWait / checkInterval);
+                
+                const observer = new MutationObserver((mutations) => {
+                    // 스크립트 태그나 스타일 변경은 무시
+                    const significantMutations = mutations.filter(m => 
+                        m.type === 'childList' || 
+                        (m.type === 'attributes' && !['style', 'class'].includes(m.attributeName))
+                    );
+                    
+                    if (significantMutations.length > 0) {
+                        mutationCount += significantMutations.length;
+                        lastMutationTime = Date.now();
+                    }
+                });
+                
+                observer.observe(document.body, {
+                    childList: true,
+                    subtree: true,
+                    attributes: true,
+                    characterData: true
+                });
+                
+                const checkStability = setInterval(() => {
+                    checkCount++;
+                    const timeSinceLastMutation = Date.now() - lastMutationTime;
+                    
+                    // 안정화 조건: 일정 시간 동안 변경 없음 또는 최대 대기 시간 초과
+                    if (timeSinceLastMutation >= stableDuration || checkCount >= maxChecks) {
+                        clearInterval(checkStability);
+                        observer.disconnect();
+                        resolve({ mutationCount, stable: timeSinceLastMutation >= stableDuration });
+                    }
+                }, checkInterval);
+            });
+        }, { checkInterval: CHECK_INTERVAL, stableDuration: STABLE_DURATION, maxWait: MAX_WAIT, threshold: MUTATION_THRESHOLD });
+        
+        console.log('    -> 콘텐츠 안정화 완료');
+    } catch (e) {
+        console.warn('    -> 콘텐츠 안정화 대기 실패:', e.message);
+    }
+}
+
+/**
+ * Shadow DOM 내부 콘텐츠 및 스타일 추출
+ * @param {import('playwright').Page} page 
+ * @returns {Promise<string>} 인라인화된 Shadow DOM 콘텐츠
+ */
+async function extractShadowDomContent(page) {
+    if (!SPA_APP_CONFIG.SHADOW_DOM.ENABLED) return '';
+    
+    try {
+        return await page.evaluate((config) => {
+            const results = [];
+            
+            function traverseShadowRoots(node, depth = 0) {
+                if (depth > config.MAX_DEPTH) return;
+                
+                // Shadow Root가 있는 요소 찾기
+                if (node.shadowRoot) {
+                    const shadowContent = node.shadowRoot.innerHTML;
+                    const tagName = node.tagName.toLowerCase();
+                    
+                    // Shadow DOM 스타일 추출
+                    let styles = '';
+                    if (config.INLINE_STYLES) {
+                        const styleSheets = node.shadowRoot.adoptedStyleSheets || [];
+                        const styleElements = node.shadowRoot.querySelectorAll('style');
+                        
+                        styleElements.forEach(s => {
+                            styles += s.textContent + '\n';
+                        });
+                    }
+                    
+                    results.push({
+                        host: tagName,
+                        content: shadowContent,
+                        styles: styles
+                    });
+                }
+                
+                // 자식 노드 탐색
+                const children = node.children || [];
+                for (const child of children) {
+                    traverseShadowRoots(child, depth);
+                }
+                
+                // Shadow Root 내부도 탐색
+                if (node.shadowRoot) {
+                    const shadowChildren = node.shadowRoot.children || [];
+                    for (const child of shadowChildren) {
+                        traverseShadowRoots(child, depth + 1);
+                    }
+                }
+            }
+            
+            traverseShadowRoots(document.body);
+            return JSON.stringify(results);
+        }, SPA_APP_CONFIG.SHADOW_DOM);
+    } catch (e) {
+        console.warn('    -> Shadow DOM 추출 실패:', e.message);
+        return '';
+    }
+}
+
+/**
+ * 편집 가능한 콘텐츠 캡처 (Textarea, Contenteditable, Input)
+ * @param {import('playwright').Page} page 
+ * @returns {Promise<Object>} 캡처된 편집 가능 콘텐츠
+ */
+async function captureEditableContent(page) {
+    const config = SPA_APP_CONFIG.EDITABLE_CONTENT;
+    if (!config.CAPTURE_TEXTAREA && !config.CAPTURE_CONTENTEDITABLE && !config.CAPTURE_INPUT) {
+        return {};
+    }
+    
+    try {
+        return await page.evaluate((cfg) => {
+            const result = {
+                textareas: [],
+                contenteditables: [],
+                inputs: [],
+                markdownContent: null
+            };
+            
+            // Textarea 캡처
+            if (cfg.CAPTURE_TEXTAREA) {
+                document.querySelectorAll('textarea').forEach((ta, idx) => {
+                    const value = ta.value || ta.textContent || '';
+                    if (value.length > 0 && value.length <= cfg.MAX_CONTENT_LENGTH) {
+                        result.textareas.push({
+                            id: ta.id || `textarea_${idx}`,
+                            name: ta.name || '',
+                            value: value,
+                            placeholder: ta.placeholder || ''
+                        });
+                    }
+                });
+            }
+            
+            // Contenteditable 캡처
+            if (cfg.CAPTURE_CONTENTEDITABLE) {
+                document.querySelectorAll('[contenteditable="true"]').forEach((el, idx) => {
+                    const content = el.innerHTML || '';
+                    const text = el.innerText || '';
+                    if (text.length > 0 && text.length <= cfg.MAX_CONTENT_LENGTH) {
+                        result.contenteditables.push({
+                            id: el.id || `contenteditable_${idx}`,
+                            className: el.className || '',
+                            html: content,
+                            text: text
+                        });
+                    }
+                });
+            }
+            
+            // Input 캡처 (type=text, search 등)
+            if (cfg.CAPTURE_INPUT) {
+                document.querySelectorAll('input[type="text"], input[type="search"], input:not([type])').forEach((inp, idx) => {
+                    const value = inp.value || '';
+                    if (value.length > 0) {
+                        result.inputs.push({
+                            id: inp.id || `input_${idx}`,
+                            name: inp.name || '',
+                            value: value,
+                            placeholder: inp.placeholder || ''
+                        });
+                    }
+                });
+            }
+            
+            // 마크다운 콘텐츠 감지 및 보존
+            if (cfg.PRESERVE_MARKDOWN) {
+                // 마크다운 에디터 패턴 찾기
+                const markdownSelectors = [
+                    '[class*="markdown"]', '[class*="prose"]',
+                    '.ProseMirror', '.CodeMirror', '.cm-content',
+                    '[class*="editor-content"]', '[data-slate-editor]'
+                ];
+                
+                for (const selector of markdownSelectors) {
+                    const el = document.querySelector(selector);
+                    if (el) {
+                        result.markdownContent = {
+                            selector: selector,
+                            html: el.innerHTML,
+                            text: el.innerText
+                        };
+                        break;
+                    }
+                }
+            }
+            
+            return result;
+        }, config);
+    } catch (e) {
+        console.warn('    -> 편집 콘텐츠 캡처 실패:', e.message);
+        return {};
+    }
+}
+
+/**
+ * 인터랙티브 요소 확장 (탭, 아코디언 등)
+ * @param {import('playwright').Page} page 
+ */
+async function expandInteractiveElements(page) {
+    const config = SPA_APP_CONFIG.INTERACTIVE_ELEMENTS;
+    
+    try {
+        // 탭 클릭하여 모든 콘텐츠 캡처
+        if (config.CLICK_TABS) {
+            const tabs = await page.locator('[role="tab"], .tab, [class*="tab-"]:not([class*="table"])').all();
+            for (const tab of tabs.slice(0, 5)) { // 최대 5개 탭
+                try {
+                    if (await tab.isVisible()) {
+                        await tab.click();
+                        await page.waitForTimeout(config.WAIT_AFTER_INTERACTION);
+                    }
+                } catch (e) {}
+            }
+        }
+        
+        // 아코디언 펼치기
+        if (config.EXPAND_ACCORDIONS) {
+            await page.evaluate(() => {
+                // 닫힌 아코디언/details 열기
+                document.querySelectorAll('details:not([open])').forEach(d => d.open = true);
+                
+                // aria-expanded="false" 요소 클릭
+                document.querySelectorAll('[aria-expanded="false"]').forEach(el => {
+                    try { el.click(); } catch(e) {}
+                });
+                
+                // collapsed 클래스 요소 처리
+                document.querySelectorAll('.collapsed, .accordion-collapsed').forEach(el => {
+                    try { el.click(); } catch(e) {}
+                });
+            });
+            await page.waitForTimeout(config.WAIT_AFTER_INTERACTION);
+        }
+        
+        console.log('    -> 인터랙티브 요소 확장 완료');
+    } catch (e) {
+        console.warn('    -> 인터랙티브 요소 확장 실패:', e.message);
+    }
+}
+
+/**
+ * SPA 프레임워크 감지
+ * @param {import('playwright').Page} page 
+ * @returns {Promise<{framework: string, confidence: number}>}
+ */
+async function detectSpaFramework(page) {
+    try {
+        return await page.evaluate((frameworks) => {
+            const detected = { framework: 'unknown', confidence: 0, indicators: [] };
+            
+            // React 감지
+            for (const selector of frameworks.REACT) {
+                if (document.querySelector(selector)) {
+                    detected.indicators.push(`React: ${selector}`);
+                    detected.framework = 'react';
+                    detected.confidence += 25;
+                }
+            }
+            if (window.__REACT_DEVTOOLS_GLOBAL_HOOK__ || window.React) {
+                detected.framework = 'react';
+                detected.confidence += 50;
+            }
+            
+            // Vue 감지
+            for (const selector of frameworks.VUE) {
+                if (document.querySelector(selector)) {
+                    detected.indicators.push(`Vue: ${selector}`);
+                    if (detected.framework === 'unknown') detected.framework = 'vue';
+                    detected.confidence += 25;
+                }
+            }
+            if (window.__VUE__ || window.Vue) {
+                detected.framework = 'vue';
+                detected.confidence += 50;
+            }
+            
+            // Angular 감지
+            for (const selector of frameworks.ANGULAR) {
+                if (document.querySelector(selector)) {
+                    detected.indicators.push(`Angular: ${selector}`);
+                    if (detected.framework === 'unknown') detected.framework = 'angular';
+                    detected.confidence += 25;
+                }
+            }
+            
+            // Svelte 감지
+            for (const selector of frameworks.SVELTE) {
+                if (document.querySelector(selector)) {
+                    detected.indicators.push(`Svelte: ${selector}`);
+                    if (detected.framework === 'unknown') detected.framework = 'svelte';
+                    detected.confidence += 25;
+                }
+            }
+            
+            detected.confidence = Math.min(detected.confidence, 100);
+            return detected;
+        }, SPA_APP_CONFIG.FRAMEWORK_DETECTION);
+    } catch (e) {
+        return { framework: 'unknown', confidence: 0 };
+    }
+}
 
 /**
  * SPA 여부 자동 감지
@@ -318,7 +651,14 @@ async function scrapeSite(targetDomain, spaMode = false, customMenuStructure = n
       // { directory: 'assets/fonts', extensions: ['.woff', '.woff2', '.ttf', '.eot'] }, // 폰트 제외
       { directory: PATHS.ASSETS.DATA, extensions: FILE_EXTENSIONS.DATA }
     ],
-    urlFilter: (url) => url.includes(targetDomain),
+    urlFilter: (url) => {
+      // 폰트 파일 제외
+      const excludeExtensions = ['.woff', '.woff2', '.ttf', '.eot', '.otf'];
+      if (excludeExtensions.some(ext => url.toLowerCase().includes(ext))) {
+        return false;
+      }
+      return url.includes(targetDomain);
+    },
     plugins: [ 
       new PuppeteerPlugin({
         launchOptions: { headless: "new" },
@@ -330,20 +670,34 @@ async function scrapeSite(targetDomain, spaMode = false, customMenuStructure = n
   };
 
   try {
-    console.log(`[Start] 스크래핑 시작: ${targetDomain} (SPA Mode: ${spaMode})`);
+    console.log(`[Start] 스크래핑 시작: ${targetDomain}`);
     
     if (await fs.pathExists(outputDir)) {
       console.log('[Info] 기존 결과 폴더 정리 중...');
       await fs.remove(outputDir);
     }
-
-    // 기본 website-scraper로 먼저 크롤링
-    await scrape(options);
     
-    // SPA 모드면 Playwright로 추가 탐색
-    if (spaMode) {
-        console.log('[SPA Mode] Playwright로 정밀 탐색 시작...');
+    // 출력 디렉토리 생성
+    await fs.ensureDir(outputDir);
+
+    // 🆕 자동 SPA 감지: spaMode가 명시적으로 false가 아니면 자동 감지
+    let useSpaMode = spaMode;
+    if (spaMode === undefined || spaMode === null) {
+        const detection = await detectSpaMode(targetDomain);
+        useSpaMode = detection.isSpa;
+        console.log(`[Auto-Detect] ${detection.reason}`);
+    }
+    
+    console.log(`[Mode] ${useSpaMode ? 'SPA Mode (Playwright)' : 'Normal Mode (website-scraper)'}`);
+
+    // SPA 모드: Playwright만 사용 (website-scraper는 JS 렌더링 전 상태를 저장하므로 부적합)
+    if (useSpaMode) {
+        console.log('[SPA Mode] Playwright로 전체 사이트 캡처...');
         await captureSpaPages(targetDomain, outputDir, menuStructure);
+    } else {
+        // 일반 모드: 기존 website-scraper 사용
+        console.log('[Normal Mode] website-scraper로 크롤링...');
+        await scrape(options);
     }
 
     // [전역 자산 정리] 로고 등 공용 이미지 절대 경로화
@@ -390,6 +744,12 @@ async function captureSpaPages(url, outputDir, menuStructure) {
         console.log('[Playwright] JS 렌더링 대기 중...');
         await page.waitForTimeout(3000);
         
+        // 🆕 SPA 프레임워크 감지
+        const frameworkInfo = await detectSpaFramework(page);
+        if (frameworkInfo.framework !== 'unknown') {
+            console.log(`[Playwright] 🔍 SPA 프레임워크 감지: ${frameworkInfo.framework.toUpperCase()} (신뢰도: ${frameworkInfo.confidence}%)`);
+        }
+        
         // 콘텐츠가 로드될 때까지 추가 대기
         for (let i = 0; i < 3; i++) {
             const hasContent = await page.evaluate(() => {
@@ -403,6 +763,8 @@ async function captureSpaPages(url, outputDir, menuStructure) {
             await page.waitForTimeout(2000);
         }
         
+        // 🆕 동적 콘텐츠 안정화 대기 (SPA 특성 대응)
+        await waitForContentStabilization(page);
         await waitForDynamicContent(page);
 
         reportProgress('menu', 0, 1, '메뉴 구조 탐지 중...');
@@ -419,42 +781,31 @@ async function captureSpaPages(url, outputDir, menuStructure) {
         // 스마트 큐 초기화 - 메뉴 항목은 최우선
         smartQueue.markVisited(url);
 
-        // 🆕 메뉴가 없을 경우 메인 페이지 캡처 + 링크 수집
+        // 🆕 항상 홈 페이지 먼저 캡처 (SPA 사이트 필수)
+        console.log('[SPA Mode] 홈 페이지 캡처 중...');
+        reportProgress('capture', 0, 1, '홈 페이지 캡처 중...');
+        
+        // 추가 대기 (동적 콘텐츠 로딩)
+        await page.waitForTimeout(2000);
+        
+        // 홈 페이지 캡처
+        await captureCurrentPage(page, url, outputDir, 'index', capturedPages);
+        console.log(`[SPA Mode] ✅ 홈 페이지 캡처 완료`);
+
+        // 🆕 메뉴가 없을 경우 링크 수집 모드
         if (activeMenuStructure.length === 0) {
-            console.log('[SPA Mode] 메뉴 없음 - 메인 페이지 캡처 및 링크 수집 모드');
-            reportProgress('capture', 0, 1, '메인 페이지 캡처 중...');
-            
-            // 🔍 페이지 상태 디버그
-            const pageDebug = await page.evaluate(() => ({
-                url: window.location.href,
-                title: document.title,
-                bodyLength: document.body?.innerHTML?.length || 0,
-                linkCount: document.querySelectorAll('a').length,
-                navCount: document.querySelectorAll('nav').length,
-                headerCount: document.querySelectorAll('header').length
-            }));
-            console.log(`[DEBUG] 페이지 상태: URL=${pageDebug.url}, 제목="${pageDebug.title}", body=${pageDebug.bodyLength}자, 링크=${pageDebug.linkCount}개, nav=${pageDebug.navCount}개, header=${pageDebug.headerCount}개`);
-            
-            // 추가 대기 (동적 콘텐츠 로딩)
-            await page.waitForTimeout(2000);
-            
-            // 메인 페이지 캡처
-            await captureCurrentPage(page, url, outputDir, 'index', capturedPages);
-            console.log(`[SPA Mode] 메인 페이지 캡처 완료`);
+            console.log('[SPA Mode] 메뉴 없음 - 링크 수집 모드');
             
             // 메인 페이지에서 모든 내부 링크 수집
             const mainPageLinks = await extractInternalLinks(page, url);
             console.log(`[SPA Mode] 메인 페이지에서 ${mainPageLinks.length}개 내부 링크 발견`);
-            if (mainPageLinks.length > 0 && mainPageLinks.length <= 10) {
-                console.log(`[DEBUG] 발견된 링크: ${mainPageLinks.join(', ')}`);
-            }
             
             mainPageLinks.forEach(link => smartQueue.add(link, CRAWL_PRIORITY.INTERNAL, 'mainpage'));
             
-            reportProgress('capture', 1, 1, '메인 페이지 캡처 완료');
+            reportProgress('capture', 1, 1, '홈 페이지 캡처 완료');
         } else {
             const totalMenuItems = activeMenuStructure.reduce((sum, g) => sum + Math.max(1, g.items.length), 0);
-            reportProgress('capture', 0, totalMenuItems, '메뉴 페이지 캡처 시작...');
+            reportProgress('capture', 1, totalMenuItems + 1, '메뉴 페이지 캡처 시작...');
             await processMenuGroupsWithQueue(page, activeMenuStructure, url, outputDir, capturedPages, smartQueue);
         }
         
@@ -486,35 +837,130 @@ async function captureSpaPages(url, outputDir, menuStructure) {
  * @param {CapturedPage[]} capturedList 
  */
 async function captureCurrentPage(page, baseUrl, outputDir, pageName, capturedList) {
+    console.log(`  [Capture] "${pageName}" 캡처 시작...`);
+    
+    // 🆕 SPA 프레임워크 감지 (첫 번째 페이지에서만)
+    if (capturedList.length === 0) {
+        const frameworkInfo = await detectSpaFramework(page);
+        if (frameworkInfo.framework !== 'unknown') {
+            console.log(`    -> SPA 프레임워크 감지: ${frameworkInfo.framework} (신뢰도: ${frameworkInfo.confidence}%)`);
+        }
+    }
+    
+    // 🆕 동적 콘텐츠 안정화 대기 (DOM 변경이 멈출 때까지)
+    await waitForContentStabilization(page);
+    
+    // 🆕 인터랙티브 요소 확장 (탭, 아코디언 등)
+    await expandInteractiveElements(page);
+    
     // 동적 컨텐츠 로딩을 위한 스크롤
     await autoScroll(page);
     await page.waitForTimeout(TIMEOUTS.SCROLL_WAIT);
+    
+    // 🆕 편집 가능한 콘텐츠 캡처 (Textarea, Contenteditable)
+    const editableContent = await captureEditableContent(page);
+    if (editableContent.textareas?.length > 0 || editableContent.contenteditables?.length > 0) {
+        console.log(`    -> 편집 콘텐츠 캡처: textarea ${editableContent.textareas?.length || 0}개, contenteditable ${editableContent.contenteditables?.length || 0}개`);
+    }
 
-    // [CSS Inlining] 외부 스타일시트를 내부 <style> 태그로 변환 (디자인 깨짐 방지 핵심)
-    // [성능 최적화] 옵션에 따라 건너뛰기 가능
+    // [CSS Inlining] 모든 스타일을 인라인으로 캡처 (SPA 지원)
     if (!PERFORMANCE_CONFIG.SKIP_CSS_INLINE) {
         try {
-            await page.evaluate(async () => {
-                const links = Array.from(document.querySelectorAll('link[rel="stylesheet"]'));
-                // 병렬 처리로 변경 (속도 향상)
-                await Promise.all(links.map(async (link) => {
+            // 1. 페이지의 모든 스타일시트(동적 로드 포함) 수집
+            const allStyles = await page.evaluate(() => {
+                const styles = [];
+                
+                // A. document.styleSheets에서 모든 CSS 규칙 추출
+                for (const sheet of document.styleSheets) {
                     try {
-                        if (link.href) {
-                            const response = await fetch(link.href);
-                            if (response.ok) {
-                                const cssText = await response.text();
-                                const style = document.createElement('style');
-                                style.textContent = cssText;
-                                link.replaceWith(style);
-                            }
+                        let cssText = '';
+                        for (const rule of sheet.cssRules || sheet.rules || []) {
+                            cssText += rule.cssText + '\n';
+                        }
+                        if (cssText.trim()) {
+                            styles.push(cssText);
                         }
                     } catch (e) {
-                        console.warn('[Inlining] CSS 로드 실패:', link.href);
+                        // CORS로 접근 불가한 외부 스타일시트는 href로 수집
+                        if (sheet.href) {
+                            styles.push(`/* External: ${sheet.href} */`);
+                        }
                     }
-                }));
+                }
+                
+                // B. 기존 <style> 태그 내용도 수집
+                document.querySelectorAll('style').forEach(style => {
+                    if (style.textContent.trim()) {
+                        styles.push(style.textContent);
+                    }
+                });
+                
+                return styles;
             });
+            
+            // 2. 외부 CSS 링크 수집 및 다운로드
+            const cssLinks = await page.evaluate(() => {
+                const links = Array.from(document.querySelectorAll('link[rel="stylesheet"]'));
+                return links.map(link => link.href).filter(href => href && !href.startsWith('data:'));
+            });
+            
+            const externalStyles = [];
+            for (const href of cssLinks) {
+                try {
+                    const response = await page.context().request.get(href, { timeout: 10000 });
+                    if (response.ok()) {
+                        let cssText = await response.text();
+                        // CSS 내 상대 경로를 절대 경로로 변환
+                        const baseUrl = new URL(href);
+                        cssText = cssText.replace(/url\(["']?(?!data:|http)([^"')]+)["']?\)/g, (match, url) => {
+                            try {
+                                const absoluteUrl = new URL(url, baseUrl).href;
+                                return `url("${absoluteUrl}")`;
+                            } catch (e) {
+                                return match;
+                            }
+                        });
+                        externalStyles.push(cssText);
+                    }
+                } catch (e) {
+                    // 무시
+                }
+            }
+            
+            // 3. 모든 CSS 합치기
+            const combinedCss = [...allStyles, ...externalStyles].join('\n\n');
+            
+            if (combinedCss.trim()) {
+                // 4. CSS 파일로 저장
+                const cssDir = path.join(outputDir, 'assets', 'css');
+                await fs.ensureDir(cssDir);
+                
+                const safePageNameForCss = sanitizeFileName(pageName);
+                const cssFileName = `${safePageNameForCss}.css`;
+                const cssFilePath = path.join(cssDir, cssFileName);
+                const cssRelativePath = `assets/css/${cssFileName}`;
+                
+                await fs.writeFile(cssFilePath, combinedCss, 'utf-8');
+                
+                // 5. 페이지에서 기존 스타일 정리하고 외부 CSS 링크 추가
+                await page.evaluate((cssPath) => {
+                    // 기존 style 태그 제거
+                    document.querySelectorAll('style').forEach(s => s.remove());
+                    
+                    // 외부 CSS 링크 제거
+                    document.querySelectorAll('link[rel="stylesheet"]').forEach(l => l.remove());
+                    
+                    // 새 CSS 링크 추가
+                    const link = document.createElement('link');
+                    link.rel = 'stylesheet';
+                    link.href = cssPath;
+                    document.head.insertBefore(link, document.head.firstChild);
+                }, cssRelativePath);
+                
+                console.log(`    -> CSS 파일 저장: ${cssFileName} (${allStyles.length}개 내부 + ${externalStyles.length}개 외부)`);
+            }
         } catch (e) {
-            console.error('[Playwright] CSS Inlining 중 에러:', e);
+            console.error('[Playwright] CSS 캡처 중 에러:', e.message);
         }
     }
 
@@ -597,6 +1043,15 @@ async function captureCurrentPage(page, baseUrl, outputDir, pageName, capturedLi
     // 5. noscript 태그 제거 (불필요한 대체 콘텐츠)
     content = content.replace(/<noscript\b[^>]*>([\s\S]*?)<\/noscript>/gim, "");
     
+    // 6. Wix/SPA 플랫폼 특수 경로 링크 제거 (/_components, /_json, /_runtimes, /_woff 등)
+    content = content.replace(/<link\b[^>]*href=["'][^"']*\/_(?:components|json|runtimes|woff|api)[^"']*["'][^>]*>/gim, "");
+    
+    // 7. 외부 JS 런타임 참조 제거
+    content = content.replace(/<link\b[^>]*href=["'][^"']*(?:runtime|chunk|vendor|webpack)[^"']*\.js["'][^>]*>/gim, "");
+    
+    // 8. 남은 preload 링크 모두 제거 (as 속성 있는 것들)
+    content = content.replace(/<link\b[^>]*\bas=["'][^"']+["'][^>]*>/gim, "");
+    
     const safeName = sanitizeFileName(pageName);
     const fileName = `${safeName}.html`;
 
@@ -617,14 +1072,41 @@ async function captureCurrentPage(page, baseUrl, outputDir, pageName, capturedLi
         .replace(/href="\/_json\//g, 'href="assets/data/')
         .replace(/src="\/_json\//g, 'src="assets/data/');
     
+    // 🆕 Shadow DOM 콘텐츠 추출 및 저장
+    const shadowDomContent = await extractShadowDomContent(page);
+    let shadowDomData = null;
+    if (shadowDomContent && shadowDomContent !== '[]') {
+        try {
+            shadowDomData = JSON.parse(shadowDomContent);
+            if (shadowDomData.length > 0) {
+                console.log(`    -> Shadow DOM 컴포넌트 ${shadowDomData.length}개 캡처`);
+            }
+        } catch (e) {}
+    }
+    
     await fs.outputFile(path.join(outputDir, fileName), fixedContent);
     console.log(`    -> 저장 완료: ${fileName}`);
+    
+    // 🆕 편집 콘텐츠 별도 저장 (마크다운 등 원본 보존)
+    if (editableContent && (editableContent.textareas?.length > 0 || editableContent.contenteditables?.length > 0 || editableContent.markdownContent)) {
+        const contentFile = `${safeName}.content.json`;
+        await fs.outputFile(path.join(outputDir, 'assets', 'data', contentFile), JSON.stringify({
+            pageName,
+            timestamp: new Date().toISOString(),
+            editableContent,
+            shadowDomData
+        }, null, 2));
+    }
     
     capturedList.push({ 
         name: pageName, 
         file: fileName,
         hash: contentHash,
-        url: page.url()
+        url: page.url(),
+        // 🆕 메타데이터 추가
+        hasEditableContent: !!(editableContent.textareas?.length > 0 || editableContent.contenteditables?.length > 0),
+        hasShadowDom: shadowDomData?.length > 0,
+        hasMarkdown: !!editableContent.markdownContent
     });
 }
 
@@ -767,6 +1249,16 @@ async function postProcessHtml(outputDir, pages, menuStructure = []) {
         const filePath = path.join(outputDir, file);
         let content = await fs.readFile(filePath, 'utf-8');
         
+        // 0. 로고 링크는 항상 index.html로 (메뉴 치환보다 먼저!)
+        // alt에 "logo"가 포함된 이미지 링크를 index.html로 변경
+        content = content.replace(/<a\b([^>]*)>(\s*<img\b[^>]*alt=["'][^"']*logo[^"']*["'][^>]*>\s*)<\/a>/gi, (match, attrs, img) => {
+            let newAttrs = attrs.replace(/href=["'][^"']*["']/i, 'href="index.html"');
+            if (!newAttrs.includes('href=')) {
+                newAttrs = ` href="index.html"` + newAttrs;
+            }
+            return `<a${newAttrs}>${img}</a>`;
+        });
+        
         // 1. 메뉴 링크 치환 (Link Rewriting)
         // pages 배열에 있는 메뉴명과 일치하는 링크를 찾아 로컬 파일로 연결
         pages.forEach(p => {
@@ -799,19 +1291,41 @@ async function postProcessHtml(outputDir, pages, menuStructure = []) {
             if (p.url && p.url !== 'about:blank') {
                 const urlRegex = new RegExp(`href=["']${escapeRegExp(p.url)}["']`, 'gi');
                 content = content.replace(urlRegex, `href="${p.file}"`);
+                
+                // D. 경로 기반 치환: /about, /events 등 상대 경로도 치환
+                try {
+                    const urlObj = new URL(p.url);
+                    const pathname = urlObj.pathname;
+                    if (pathname && pathname !== '/') {
+                        // /about, about, ./about 등 다양한 형태 치환
+                        const pathVariants = [
+                            pathname,                           // /about
+                            pathname.substring(1),              // about
+                            `.${pathname}`,                     // ./about
+                            `assets${pathname}`,                // assets/about (Wix 등)
+                            pathname.replace(/^\//, 'assets/')  // assets/about
+                        ];
+                        pathVariants.forEach(variant => {
+                            if (variant) {
+                                const pathRegex = new RegExp(`href=["']${escapeRegExp(variant)}["']`, 'gi');
+                                content = content.replace(pathRegex, `href="${p.file}"`);
+                            }
+                        });
+                    }
+                } catch (e) { /* URL 파싱 실패 시 무시 */ }
             }
         });
 
-        // 2. 네비게이션 바 주입
-        if (content.includes('<body')) {
-            if (!content.includes('id="scraper-nav"')) { // 중복 주입 방지
-                content = content.replace(/<body[^>]*>/i, (match) => `${match}\n${navHtml}`);
-            }
-        }
+        // 2. 네비게이션 바 주입 (비활성화 - 프리뷰 깔끔하게 유지)
+        // if (content.includes('<body')) {
+        //     if (!content.includes('id="scraper-nav"')) {
+        //         content = content.replace(/<body[^>]*>/i, (match) => `${match}\n${navHtml}`);
+        //     }
+        // }
         
         await fs.writeFile(filePath, content);
     }
-    console.log(`[Post-Process] ${htmlFiles.length}개 파일의 링크 연결 및 네비게이션 주입 완료`);
+    console.log(`[Post-Process] ${htmlFiles.length}개 파일의 링크 연결 완료`);
 }
 
 
@@ -864,7 +1378,12 @@ async function downloadImages(page, absOutputDir, relOutputDir) {
             return urls;
         });
         
-        const uniqueSrcs = [...new Set(imgSrcs)];
+        // 폰트 파일 제외
+        const fontExtensions = ['.woff', '.woff2', '.ttf', '.eot', '.otf'];
+        const uniqueSrcs = [...new Set(imgSrcs)].filter(url => {
+            const lowerUrl = url.toLowerCase();
+            return !fontExtensions.some(ext => lowerUrl.includes(ext));
+        });
         
         // 🆕 캐시된 이미지와 새 이미지 분리
         const cachedImages = [];
@@ -1083,10 +1602,18 @@ async function enrichMenusWithHover(page, menus) {
  * - Figma 사이트 등 SPA 대응
  */
 async function enrichMenusWithHoverStrict(page, menus) {
-    console.log('[SPA Mode] 호버 기반 2차 메뉴 탐색 시작...');
+    console.log('[SPA Mode] 호버+클릭 기반 2차 메뉴 탐색 시작...');
+    
+    const originalUrl = page.url();
     
     for (const menu of menus) {
         try {
+            // 원래 페이지로 복귀 (이전 메뉴에서 페이지가 변경됐을 수 있음)
+            if (page.url() !== originalUrl) {
+                await page.goto(originalUrl, { waitUntil: 'domcontentloaded', timeout: 10000 });
+                await page.waitForTimeout(1000);
+            }
+            
             // 트리거 찾기 (여러 방식 시도)
             let trigger = page.getByText(menu.trigger, { exact: true }).first();
             if (!(await trigger.isVisible().catch(() => false))) {
@@ -1099,7 +1626,7 @@ async function enrichMenusWithHoverStrict(page, menus) {
             
             const triggerBox = await trigger.boundingBox();
             
-            // 호버 전 화면의 모든 클릭 가능 텍스트 수집
+            // 호버/클릭 전 화면의 모든 클릭 가능 텍스트 수집
             const beforeTexts = await page.evaluate(() => {
                 const texts = new Set();
                 document.querySelectorAll('a, button, [role="menuitem"], [role="link"], [onclick], [class*="menu"] > div, [class*="menu"] > span').forEach(el => {
@@ -1112,9 +1639,9 @@ async function enrichMenusWithHoverStrict(page, menus) {
             });
             const beforeSet = new Set(beforeTexts);
             
-            // 호버 실행
+            // 1단계: 호버 시도
             await trigger.hover();
-            await page.waitForTimeout(1000); // 드롭다운 애니메이션 대기
+            await page.waitForTimeout(800); // 드롭다운 애니메이션 대기
             
             // 호버 후 새로 나타난 요소 수집
             const afterItems = await page.evaluate((config) => {
@@ -1142,36 +1669,30 @@ async function enrichMenusWithHoverStrict(page, menus) {
                 
                 document.querySelectorAll(selectors.join(',')).forEach(el => {
                     const rect = el.getBoundingClientRect();
-                    // 🆕 textContent 사용하여 전체 텍스트 가져오기 (innerText는 DOM 구조에 따라 잘릴 수 있음)
                     let text = (el.textContent || el.innerText || '').trim();
-                    
-                    // 🆕 줄바꿈/탭을 공백으로 변환 후 연속 공백 제거
                     text = text.replace(/[\n\r\t]+/g, ' ').replace(/\s+/g, ' ').trim();
                     
                     // 기본 필터링
                     if (!text || text.length < 2 || text.length > 30) return;
                     if (seenTexts.has(text)) return;
                     if (rect.width === 0 || rect.height === 0) return;
-                    
-                    // 🆕 숫자만 있는 경우 제외
                     if (/^\d+$/.test(text)) return;
-                    
-                    // 위치 필터링: 트리거 아래, 화면 상단 영역
-                    if (rect.top < triggerY - 10) return; // 트리거보다 위에 있으면 제외
-                    if (rect.top > 600) return; // 너무 아래는 제외 (500 → 600으로 완화)
-                    
-                    // 제외 키워드
+                    if (rect.top < triggerY - 10) return;
+                    if (rect.top > 600) return;
                     if (/로그인|회원가입|검색|장바구니|마이페이지|cart|login|search/i.test(text)) return;
-                    
-                    // 긴 문장 제외 (공백 4개 이상으로 완화)
                     if ((text.match(/\s/g) || []).length >= 4) return;
                     
+                    // 🆕 URL 수집
+                    let url = null;
+                    if (el.tagName === 'A' && el.href) {
+                        url = el.href;
+                    } else {
+                        const link = el.querySelector('a[href]');
+                        if (link) url = link.href;
+                    }
+                    
                     seenTexts.add(text);
-                    items.push({
-                        text,
-                        top: rect.top,
-                        left: rect.left
-                    });
+                    items.push({ text, url, top: rect.top, left: rect.left });
                 });
                 
                 return items;
@@ -1186,16 +1707,90 @@ async function enrichMenusWithHoverStrict(page, menus) {
             newItems.sort((a, b) => a.top - b.top || a.left - b.left);
             
             if (newItems.length >= 2) {
-                const subMenus = newItems.map(item => item.text);
-                console.log(`  -> [${menu.trigger}] 하위 메뉴 발견(${subMenus.length}개): ${subMenus.join(', ')}`);
+                // 🆕 URL 포함하여 객체로 저장
+                const subMenus = newItems.map(item => ({ name: item.text, url: item.url }));
+                console.log(`  -> [${menu.trigger}] 호버로 하위 메뉴 발견(${subMenus.length}개): ${subMenus.map(s => s.name).join(', ')}`);
                 menu.items = subMenus;
             } else if (newItems.length === 1) {
-                // 1개만 있어도 하위 메뉴로 인정 (단독 서브메뉴 케이스)
-                console.log(`  -> [${menu.trigger}] 하위 메뉴 1개: ${newItems[0].text}`);
-                menu.items = [newItems[0].text];
+                console.log(`  -> [${menu.trigger}] 호버로 하위 메뉴 1개: ${newItems[0].text}`);
+                menu.items = [{ name: newItems[0].text, url: newItems[0].url }];
             } else {
-                console.log(`  -> [${menu.trigger}] 하위 메뉴 없음 (Direct Link)`);
-                menu.items = [];
+                // 2단계: 호버로 못 찾으면 클릭 시도
+                console.log(`  -> [${menu.trigger}] 호버 결과 없음, 클릭 시도...`);
+                
+                const urlBeforeClick = page.url();
+                await trigger.click().catch(() => {});
+                await page.waitForTimeout(1000);
+                
+                const urlAfterClick = page.url();
+                
+                // 페이지가 변경되지 않았다면 드롭다운 확인
+                if (urlAfterClick === urlBeforeClick) {
+                    const clickItems = await page.evaluate((config) => {
+                        const items = [];
+                        const seenTexts = new Set();
+                        const triggerY = config.triggerY;
+                        
+                        const selectors = [
+                            '[class*="dropdown"] a',
+                            '[class*="dropdown"] li',
+                            '[class*="submenu"] a',
+                            '[class*="sub-menu"] a',
+                            '[class*="gnb"] [class*="sub"] a',
+                            '[class*="nav"] [class*="sub"] a',
+                            'nav ul ul a',
+                            '[aria-expanded="true"] ~ * a',
+                            '[class*="open"] a',
+                            '[class*="active"] [class*="sub"] a'
+                        ];
+                        
+                        document.querySelectorAll(selectors.join(',')).forEach(el => {
+                            const rect = el.getBoundingClientRect();
+                            let text = (el.textContent || '').trim().replace(/[\n\r\t]+/g, ' ').replace(/\s+/g, ' ');
+                            
+                            if (!text || text.length < 2 || text.length > 30) return;
+                            if (seenTexts.has(text)) return;
+                            if (rect.width === 0 || rect.height === 0) return;
+                            if (/^\d+$/.test(text)) return;
+                            if (rect.top > 600) return;
+                            if (/로그인|회원가입|검색|장바구니|마이페이지|cart|login|search/i.test(text)) return;
+                            
+                            // 🆕 URL 수집
+                            let url = null;
+                            if (el.tagName === 'A' && el.href) {
+                                url = el.href;
+                            } else {
+                                const link = el.querySelector('a[href]');
+                                if (link) url = link.href;
+                            }
+                            
+                            seenTexts.add(text);
+                            items.push({ text, url, top: rect.top, left: rect.left });
+                        });
+                        
+                        return items;
+                    }, { triggerY: triggerBox?.y || 50 });
+                    
+                    const clickNewItems = clickItems.filter(item => 
+                        !beforeSet.has(item.text) && item.text !== menu.trigger
+                    );
+                    
+                    if (clickNewItems.length >= 1) {
+                        clickNewItems.sort((a, b) => a.top - b.top || a.left - b.left);
+                        // 🆕 URL 포함하여 객체로 저장
+                        const subMenus = clickNewItems.map(item => ({ name: item.text, url: item.url }));
+                        console.log(`  -> [${menu.trigger}] 클릭으로 하위 메뉴 발견(${subMenus.length}개): ${subMenus.map(s => s.name).join(', ')}`);
+                        menu.items = subMenus;
+                    } else {
+                        console.log(`  -> [${menu.trigger}] 하위 메뉴 없음 (Direct Link)`);
+                        menu.items = [];
+                    }
+                } else {
+                    // 페이지가 변경됨 - 이 메뉴는 직접 링크
+                    console.log(`  -> [${menu.trigger}] 페이지 이동됨 (Direct Link)`);
+                    menu.items = [];
+                    menu.href = urlAfterClick; // URL 저장
+                }
             }
             
             // 다음 메뉴를 위해 호버 해제 (페이지 상단으로 이동)
@@ -2257,4 +2852,4 @@ async function detectSiteMenus(url, progressCallback = null) {
     }
 }
 
-export { scrapeSite, detectSiteMenus };
+export { scrapeSite, detectSiteMenus, setProgressCallback };

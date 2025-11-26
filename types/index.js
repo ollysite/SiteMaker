@@ -27,6 +27,26 @@
  * @property {string} file - 저장된 파일명 (예: "spa_Page_about.html")
  * @property {string} hash - 콘텐츠 해시 (중복 방지용)
  * @property {string} url - 원본 페이지 URL
+ * @property {boolean} [hasEditableContent] - 편집 가능한 콘텐츠 포함 여부
+ * @property {boolean} [hasShadowDom] - Shadow DOM 컴포넌트 포함 여부
+ * @property {boolean} [hasMarkdown] - 마크다운 콘텐츠 포함 여부
+ */
+
+/**
+ * 편집 가능한 콘텐츠 정보
+ * @typedef {Object} EditableContent
+ * @property {Array<{id: string, name: string, value: string, placeholder: string}>} textareas - Textarea 목록
+ * @property {Array<{id: string, className: string, html: string, text: string}>} contenteditables - Contenteditable 목록
+ * @property {Array<{id: string, name: string, value: string, placeholder: string}>} inputs - Input 목록
+ * @property {{selector: string, html: string, text: string}|null} markdownContent - 마크다운 콘텐츠
+ */
+
+/**
+ * SPA 프레임워크 감지 결과
+ * @typedef {Object} FrameworkDetection
+ * @property {('react'|'vue'|'angular'|'svelte'|'unknown')} framework - 감지된 프레임워크
+ * @property {number} confidence - 신뢰도 (0-100)
+ * @property {string[]} indicators - 감지 근거 목록
  */
 
 /**
