@@ -1459,8 +1459,27 @@ async function downloadImages(page, absOutputDir, relOutputDir) {
             await Promise.all(chunk.map(async (src, chunkIndex) => {
                 const index = i + chunkIndex;
                 try {
-                    // 파일명 생성 (원본 확장자 유지 또는 jpg)
-                    const ext = path.extname(src).split('?')[0] || '.jpg';
+                    // 파일명 생성 (URL 파라미터 제거 후 확장자 추출)
+                    let cleanUrl = src;
+                    try {
+                        const urlObj = new URL(src);
+                        cleanUrl = urlObj.pathname; // 쿼리 파라미터 제거
+                    } catch(e) {}
+                    
+                    let ext = path.extname(cleanUrl).toLowerCase();
+                    
+                    // 폰트 파일은 건너뛰기
+                    const fontExts = ['.woff', '.woff2', '.ttf', '.eot', '.otf'];
+                    if (fontExts.includes(ext)) {
+                        return; // 폰트 파일 스킵
+                    }
+                    
+                    // 유효한 이미지 확장자가 아니면 jpg로 기본값
+                    const validImageExts = ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.svg', '.ico', '.bmp'];
+                    if (!validImageExts.includes(ext)) {
+                        ext = '.jpg';
+                    }
+                    
                     const filename = `img_${index}${ext}`;
                     const savePath = path.join(absOutputDir, filename);
                     
