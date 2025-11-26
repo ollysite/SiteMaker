@@ -1,9 +1,9 @@
 steps:
   - name: 'gcr.io/cloud-builders/docker'
-    args: ['build', '-t', 'gcr.io/$PROJECT_ID/sitemaker', '.']
+    args: ['build', '-t', 'asia-northeast3-docker.pkg.dev/$PROJECT_ID/sitemaker/app', '.']
 
 images:
-  - 'gcr.io/$PROJECT_ID/sitemaker'
+  - 'asia-northeast3-docker.pkg.dev/$PROJECT_ID/sitemaker/app'
 
 options:
   logging: CLOUD_LOGGING_ONLY
