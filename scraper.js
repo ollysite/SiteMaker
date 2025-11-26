@@ -1466,7 +1466,17 @@ async function downloadImages(page, absOutputDir, relOutputDir) {
                         cleanUrl = urlObj.pathname; // 쿼리 파라미터 제거
                     } catch(e) {}
                     
+                    // Unsplash 등 특수 URL 처리 (photo-xxx 형식)
+                    if (cleanUrl.includes('photo-') || cleanUrl.includes('unsplash')) {
+                        cleanUrl = cleanUrl.replace(/\.[0-9]+$/, ''); // .0, .1 등 제거
+                    }
+                    
                     let ext = path.extname(cleanUrl).toLowerCase();
+                    
+                    // 확장자가 숫자로 시작하면 무효 (예: .0, .1)
+                    if (/^\.\d/.test(ext)) {
+                        ext = '';
+                    }
                     
                     // 폰트 파일은 건너뛰기
                     const fontExts = ['.woff', '.woff2', '.ttf', '.eot', '.otf'];
@@ -2329,7 +2339,21 @@ async function extractInternalLinks(page, baseUrl) {
 async function initializeBrowser() {
     const browser = await chromium.launch({ 
         headless: true,
-        args: ['--disable-dev-shm-usage', '--no-sandbox']
+        args: [
+            '--disable-dev-shm-usage',
+            '--no-sandbox',
+            '--disable-setuid-sandbox',
+            '--disable-gpu',
+            '--disable-extensions',
+            '--disable-background-networking',
+            '--disable-default-apps',
+            '--disable-sync',
+            '--disable-translate',
+            '--no-first-run',
+            '--single-process',           // 메모리 절약
+            '--disable-software-rasterizer',
+            '--js-flags=--max-old-space-size=512'  // JS 힙 메모리 제한
+        ]
     });
     const context = await browser.newContext({
         viewport: CRAWL_CONFIG.VIEWPORT,
@@ -2354,6 +2378,11 @@ async function initializeBrowser() {
         
         // 애널리틱스 및 추적 스크립트 차단
         if (/google-analytics|googletagmanager|facebook|doubleclick|analytics/i.test(url)) {
+            return route.abort();
+        }
+        
+        // 미디어(비디오/오디오) 차단 (메모리 절약)
+        if (PERFORMANCE_CONFIG.BLOCK_MEDIA && (resourceType === 'media' || /\.(mp4|webm|ogg|mp3|wav|avi|mov)$/i.test(url))) {
             return route.abort();
         }
         

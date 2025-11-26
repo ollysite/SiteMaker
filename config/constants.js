@@ -70,7 +70,8 @@ export const PERFORMANCE_CONFIG = {
     BLOCK_IMAGES: false,      // 이미지 차단 (캡처 필요하므로 기본 false)
     BLOCK_STYLESHEETS: false, // CSS 차단 (디자인 필요하므로 false)
     BLOCK_SCRIPTS: false,     // JS 차단 - SPA 사이트는 반드시 false!
-    BLOCK_FONTS: true,        // 폰트 차단 (이미 적용 중)
+    BLOCK_FONTS: true,        // 폰트 차단 (메모리 절약)
+    BLOCK_MEDIA: true,        // 비디오/오디오 차단 (메모리 절약)
     
     // 네트워크 전략
     WAIT_STRATEGY: 'domcontentloaded', // 'networkidle' | 'domcontentloaded' | 'load'
@@ -78,9 +79,10 @@ export const PERFORMANCE_CONFIG = {
     // CSS Inlining 최적화
     SKIP_CSS_INLINE: false,   // CSS Inline 건너뛰기 (속도 우선 시 true)
     
-    // 이미지 다운로드 최적화
-    MAX_CONCURRENT_IMAGES: 10, // 동시 다운로드 이미지 수
+    // 이미지 다운로드 최적화 (메모리 절약)
+    MAX_CONCURRENT_IMAGES: 5,  // 10 -> 5 (동시 다운로드 감소)
     IMAGE_QUALITY: 80,         // JPEG 품질 (1-100)
+    MAX_IMAGE_SIZE: 5 * 1024 * 1024, // 5MB 초과 이미지 스킵
     
     // AI 메뉴 탐지
     SKIP_AI_DETECTION: false,  // AI 탐지 건너뛰기 (빠르지만 정확도 하락)
