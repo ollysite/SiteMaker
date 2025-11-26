@@ -744,6 +744,36 @@ async function captureSpaPages(url, outputDir, menuStructure) {
         console.log('[Playwright] JS 렌더링 대기 중...');
         await page.waitForTimeout(3000);
         
+        // 🆕 Figma Sites 감지 및 특수 대기
+        const isFigmaSite = await page.evaluate(() => {
+            return window.location.hostname.includes('figma.site') || 
+                   document.querySelector('script[data-template-id]') !== null ||
+                   document.querySelector('#container .tailwind') !== null;
+        });
+        
+        if (isFigmaSite) {
+            console.log('[Playwright] 🎨 Figma Sites 감지 - 추가 대기 중...');
+            // Figma Sites는 렌더링에 더 오래 걸림
+            for (let i = 0; i < 10; i++) {
+                const contentReady = await page.evaluate(() => {
+                    const container = document.querySelector('#container');
+                    if (!container) return false;
+                    // 실제 콘텐츠가 렌더링되었는지 확인
+                    const hasRealContent = container.querySelectorAll('div, img, p, h1, h2, span').length > 10;
+                    const textLength = container.innerText?.length || 0;
+                    return hasRealContent || textLength > 100;
+                });
+                if (contentReady) {
+                    console.log('[Playwright] ✅ Figma Sites 콘텐츠 로드 완료');
+                    break;
+                }
+                console.log(`[Playwright] Figma Sites 렌더링 대기... (${i + 1}/10)`);
+                await page.waitForTimeout(1500);
+            }
+            // 최종 안정화 대기
+            await page.waitForTimeout(2000);
+        }
+        
         // 🆕 SPA 프레임워크 감지
         const frameworkInfo = await detectSpaFramework(page);
         if (frameworkInfo.framework !== 'unknown') {
@@ -751,15 +781,15 @@ async function captureSpaPages(url, outputDir, menuStructure) {
         }
         
         // 콘텐츠가 로드될 때까지 추가 대기
-        for (let i = 0; i < 3; i++) {
+        for (let i = 0; i < 5; i++) {
             const hasContent = await page.evaluate(() => {
-                return document.querySelectorAll('a').length > 0 || document.body.innerText.length > 500;
+                return document.querySelectorAll('a, button, img').length > 3 || document.body.innerText.length > 200;
             });
             if (hasContent) {
                 console.log('[Playwright] ✅ 콘텐츠 감지됨');
                 break;
             }
-            console.log(`[Playwright] 콘텐츠 대기 중... (${i + 1}/3)`);
+            console.log(`[Playwright] 콘텐츠 대기 중... (${i + 1}/5)`);
             await page.waitForTimeout(2000);
         }
         
